@@ -41,3 +41,12 @@ create index game_players_player_id_idx on game_players (player_id);
 alter table players      enable row level security;
 alter table games        enable row level security;
 alter table game_players enable row level security;
+
+-- [concept: GRANTs vs RLS] RLS filters rows; GRANTs gate table access entirely.
+-- Newer Supabase images grant the API roles almost no table privileges by
+-- default, so the server's service_role needs explicit DML grants (verified:
+-- without these, even the service key gets "permission denied").
+-- anon/authenticated deliberately get nothing — the app never uses them.
+grant select, insert, update, delete
+  on players, games, game_players
+  to service_role;

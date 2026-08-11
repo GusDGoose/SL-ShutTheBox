@@ -96,3 +96,8 @@ select r.month, r.player_id, p.name, p.emoji, r.day_wins
 from ranked r
 join players p on p.id = r.player_id
 where r.rnk = 1;
+
+-- Views need their own SELECT grant (separate from the underlying tables).
+grant select
+  on game_results, daily_winners, player_stats, player_streaks, monthly_champions
+  to service_role;
