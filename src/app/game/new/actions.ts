@@ -1,6 +1,9 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabase";
+import { postWinnerCard, type AnnouncedWinner } from "@/lib/teams";
+import type { Player, PlayerStreakRow } from "@/lib/types";
 
 // The ONLY code path that writes games. Client state (the whole in-progress
 // game) arrives here once, on "Finish & crown".
@@ -71,5 +74,39 @@ export async function saveGame(payload: SaveGamePayload): Promise<SaveGameResult
     return { error: rowsError.message };
   }
 
+  // Announce in Teams — a webhook failure must NEVER fail the save.
+  try {
+    await announceWinners(sb, payload);
+  } catch (e) {
+    console.error("Teams announcement failed (game saved fine):", e);
+  }
+
   return { gameId: game.id };
+}
+
+async function announceWinners(sb: SupabaseClient, payload: SaveGamePayload) {
+  if (!process.env.TEAMS_WEBHOOK_URL) return;
+
+  const minScore = Math.min(...payload.entries.map((e) => e.score));
+  const winnerIds = payload.entries
+    .filter((e) => e.score === minScore)
+    .map((e) => e.playerId);
+
+  const [playersRes, streaksRes] = await Promise.all([
+    sb.from("players").select("*").in("id", winnerIds),
+    sb.from("player_streaks").select("*").in("player_id", winnerIds),
+  ]);
+  const players = (playersRes.data ?? []) as Player[];
+  const streaks = new Map(
+    ((streaksRes.data ?? []) as PlayerStreakRow[]).map((s) => [s.player_id, s]),
+  );
+
+  const winners: AnnouncedWinner[] = players.map((p) => ({
+    name: p.name,
+    emoji: p.emoji,
+    score: minScore,
+    streak: streaks.get(p.id)?.current_streak ?? 0,
+    shutBox: minScore === 0,
+  }));
+  await postWinnerCard(winners);
 }
