@@ -21,6 +21,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except the PIN page itself and Next's static assets.
-  matcher: ["/((?!pin|_next/static|_next/image|favicon.ico).*)"],
+  // Everything except the PIN page, the health diagnostic, and static assets.
+  matcher: ["/((?!pin|api/health|_next/static|_next/image|favicon.ico).*)"],
 };
