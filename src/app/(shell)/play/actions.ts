@@ -52,7 +52,11 @@ export async function saveGame(payload: SaveGamePayload): Promise<SaveGameResult
 
   const { data: game, error: gameError } = await sb
     .from("games")
-    .insert({}) // played_on + max_tile = DB defaults (Stockholm today, 12-tile)
+    // played_on, ruleset and season come from DB defaults. Games now have a
+    // lifecycle (0005) and this write path predates it, so it has to mark the
+    // game finished itself or the stats views would never see it. WP-B6
+    // replaces this whole action with the start_game/end_turn/finish_game RPCs.
+    .insert({ status: "finished", finished_at: new Date().toISOString() })
     .select("id")
     .single();
   if (gameError || !game) return { error: gameError?.message ?? "Could not create game." };

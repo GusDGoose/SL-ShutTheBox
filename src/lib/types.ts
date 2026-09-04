@@ -1,5 +1,6 @@
-// Row shapes for our tables and views (hand-written; a generated-types setup
-// via `supabase gen types` is a v2 nicety).
+// Row shapes for our tables and views. Hand-written and therefore only as
+// correct as whoever last edited them — WP-B12 replaces this file with output
+// from `supabase gen types typescript`.
 
 export type Player = {
   id: string;
@@ -13,7 +14,6 @@ export type Player = {
 export type Game = {
   id: string;
   played_on: string; // YYYY-MM-DD
-  max_tile: 12;
   created_at: string;
 };
 
@@ -29,7 +29,6 @@ export type GamePlayer = {
 export type GameResultRow = {
   game_id: string;
   played_on: string;
-  max_tile: 12;
   player_id: string;
   score: number;
   tiles_open: number[] | null;
