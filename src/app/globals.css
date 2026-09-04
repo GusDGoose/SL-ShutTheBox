@@ -1,26 +1,213 @@
 @import "tailwindcss";
 
+/* [concept: attribute-driven dark mode] The v1 app was prefers-color-scheme
+   only, so a device could never override the OS. Dark mode is now an attribute
+   on <html> that the root layout stamps from a cookie, and "system" is resolved
+   to light/dark before first paint by a tiny inline script. Every token is
+   therefore defined on bare :root and only REDEFINED under the dark selector —
+   never defined solely inside a media query. */
+@custom-variant dark (&:where([data-mode="dark"], [data-mode="dark"] *));
+
+/* Oak & green felt, daylight — the default board. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --canvas: #f3ecdf;
+  --surface: #fbf7ee;
+  --surface-2: #eee4d2;
+  --ink: #2b1f17;
+  --ink-muted: #6e5c4e;
+  --line: color-mix(in oklab, var(--ink) 12%, transparent);
+  --felt: #2e6b4e;
+  --felt-deep: #1f4d37;
+  --wood: #b07a3f;
+  --wood-light: #d6a96a;
+  --wood-dark: #7a5024;
+  --brass: #c9973a;
+  --brass-ink: #7a5518;
+  --ivory: #f6ebd4;
+  --shut: #2f8f5b;
+  --danger: #b4432f;
+  --streak: #d9782b;
+  --shadow-rgb: 43 31 23;
+  color-scheme: light;
+}
+
+/* Evening pub: lamp-lit, not inverted. */
+[data-mode="dark"] {
+  --canvas: #17120f;
+  --surface: #211a15;
+  --surface-2: #2b221c;
+  --ink: #f1e8d8;
+  --ink-muted: #b5a48f;
+  --felt: #23503b;
+  --felt-deep: #163527;
+  --wood: #8e6132;
+  --wood-light: #b3844a;
+  --wood-dark: #4e3116;
+  --brass: #d9a94a;
+  --brass-ink: #e4b95e;
+  --ivory: #eadbbe;
+  --shut: #4cc17e;
+  --danger: #e0684f;
+  --streak: #f08a3c;
+  --shadow-rgb: 0 0 0;
+  color-scheme: dark;
+}
+
+/* Board themes override wood/felt/hardware only, so layout colours stay put. */
+[data-theme="walnut"] {
+  --canvas: #f1e9e0;
+  --felt: #6e2a34;
+  --felt-deep: #4a1b22;
+  --wood: #6b4226;
+  --wood-light: #8a5a3a;
+  --wood-dark: #3e2412;
+}
+[data-theme="walnut"][data-mode="dark"] {
+  --canvas: #15100e;
+  --felt: #4e1e26;
+  --felt-deep: #33131a;
+  --wood: #5a3720;
+  --wood-light: #74482b;
+  --wood-dark: #2e1a0c;
+}
+[data-theme="birch"] {
+  --canvas: #f4f1ea;
+  --felt: #223a5e;
+  --felt-deep: #182a45;
+  --wood: #d9c3a0;
+  --wood-light: #eeddbf;
+  --wood-dark: #a98d66;
+  --brass: #8f98a3;
+  --brass-ink: #4e5966;
+}
+[data-theme="birch"][data-mode="dark"] {
+  --canvas: #12141a;
+  --felt: #1a2c48;
+  --felt-deep: #111e33;
+  --wood: #b9a17f;
+  --wood-light: #cdb795;
+  --wood-dark: #7e6a4c;
+  --brass: #aeb6bf;
+  --brass-ink: #c7ced6;
+}
+/* Wildcard. Always night — the mode toggle is disabled while it's selected. */
+[data-theme="neon"],
+[data-theme="neon"][data-mode="dark"] {
+  --canvas: #0b0b14;
+  --surface: #14142a;
+  --surface-2: #1c1b38;
+  --ink: #eef2ff;
+  --ink-muted: #9aa3d6;
+  --felt: #0f1030;
+  --felt-deep: #0a0a20;
+  --wood: #1d1b3a;
+  --wood-light: #2a2755;
+  --wood-dark: #121130;
+  --brass: #ff3fa4;
+  --brass-ink: #ff7cc3;
+  --ivory: #4df0ff;
+  --shut: #5cff9d;
+  --danger: #ff6b6b;
+  --streak: #ffb347;
+  --shadow-rgb: 77 240 255;
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-felt: var(--felt);
+  --color-felt-deep: var(--felt-deep);
+  --color-wood: var(--wood);
+  --color-wood-light: var(--wood-light);
+  --color-wood-dark: var(--wood-dark);
+  --color-brass: var(--brass);
+  --color-brass-ink: var(--brass-ink);
+  --color-ivory: var(--ivory);
+  --color-shut: var(--shut);
+  --color-danger: var(--danger);
+  --color-streak: var(--streak);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), Georgia, "Times New Roman", serif;
+
+  --radius-tile: 0.5rem;
+  --radius-control: 0.75rem;
+  --radius-card: 1.25rem;
+
+  --shadow-card: 0 1px 2px rgb(var(--shadow-rgb) / 0.06),
+    0 8px 24px -12px rgb(var(--shadow-rgb) / 0.18);
+  --shadow-tile-up: inset 0 1px 0 rgb(255 255 255 / 0.35),
+    inset 0 -2px 0 rgb(0 0 0 / 0.18), 0 3px 0 var(--wood-dark),
+    0 6px 10px -2px rgb(0 0 0 / 0.35);
+  --shadow-tile-down: inset 0 1px 3px rgb(0 0 0 / 0.45);
+  --shadow-tray: inset 0 2px 10px rgb(0 0 0 / 0.45);
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-flip: cubic-bezier(0.3, 1.4, 0.5, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-flip: 320ms;
+  --duration-slow: 480ms;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+  }
+  body {
+    min-height: 100dvh;
+    /* v1 loaded Geist and then overrode it with Arial here. */
+    font-family: var(--font-sans);
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-brass);
+    outline-offset: 2px;
+  }
+  /* Brass disappears against green; the ring goes ivory on the board. */
+  .felt :focus-visible {
+    outline-color: var(--color-ivory);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* Two ~1KB inline SVG noise fields, tinted by whatever colour sits behind
+     them — no image requests, and they follow the theme for free. */
+  .wood {
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9 0.02' numOctaves='3' seed='7'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.16'/%3E%3C/svg%3E");
+    background-color: var(--color-wood);
+    background-image: var(--grain),
+      linear-gradient(
+        90deg,
+        rgb(255 255 255 / 0.08),
+        transparent 40%,
+        rgb(0 0 0 / 0.1)
+      );
+  }
+  .felt {
+    --nap: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' seed='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+    background-color: var(--color-felt);
+    background-image: var(--nap);
+    box-shadow: var(--shadow-tray);
+  }
+  .eyebrow {
+    font: 600 0.75rem/1 var(--font-sans);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-muted);
+  }
 }

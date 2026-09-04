@@ -7,7 +7,7 @@ import {
   saveGame,
   type SaveGameEntry,
   type SaveGameResult,
-} from "@/app/game/new/actions";
+} from "@/app/(shell)/play/actions";
 import { PlayerPicker } from "./player-picker";
 import { ScorePad } from "./score-pad";
 import { TileBoard } from "./tile-board";

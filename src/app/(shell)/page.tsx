@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { GameResultRow, Player } from "@/lib/types";
-import { stockholmDayLabel, stockholmToday } from "@/lib/dates";
+import { dayLabel, stockholmToday } from "@/lib/dates";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -39,12 +39,12 @@ export default async function Home() {
       <main className="flex flex-col items-center justify-center gap-6 p-10 text-center">
         <div className="text-7xl">🎲</div>
         <h1 className="text-3xl font-bold">Shut the Box</h1>
-        <p className="max-w-md capitalize opacity-70">{stockholmDayLabel(today)}</p>
+        <p className="max-w-md opacity-70">{dayLabel(today)}</p>
         <p className="max-w-md opacity-70">
           No game yet today. Gather the colleagues — lowest score wins the day.
         </p>
         <Link
-          href="/game/new"
+          href="/play"
           className="rounded-2xl bg-foreground px-8 py-4 text-lg font-semibold text-background transition-transform active:scale-95"
         >
           Start today&apos;s game
@@ -55,7 +55,7 @@ export default async function Home() {
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
-      <h1 className="text-2xl font-bold capitalize">{stockholmDayLabel(today)}</h1>
+      <h1 className="text-2xl font-bold">{dayLabel(today)}</h1>
       {gameIds.map((gameId, gi) => {
         const gameRows = rows.filter((r) => r.game_id === gameId);
         return (
@@ -85,7 +85,7 @@ export default async function Home() {
           </Link>
         );
       })}
-      <Link href="/game/new" className="text-sm opacity-70 hover:opacity-100">
+      <Link href="/play" className="text-sm opacity-70 hover:opacity-100">
         + Start another game
       </Link>
     </main>

@@ -14,7 +14,7 @@ export default defineConfig({
         test: {
           name: "lib",
           environment: "node",
-          include: ["src/lib/**/*.test.{ts,tsx}"],
+          include: ["src/lib/**/*.test.{ts,tsx}", "src/*.test.{ts,tsx}"],
         },
       },
       {

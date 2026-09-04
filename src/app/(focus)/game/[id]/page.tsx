@@ -1,5 +1,5 @@
 import type { GameResultRow, Player, PlayerStreakRow } from "@/lib/types";
-import { stockholmDayLabel } from "@/lib/dates";
+import { dayLabel } from "@/lib/dates";
 import { supabaseAdmin } from "@/lib/supabase";
 import { extractVideoId } from "@/lib/youtube";
 import { Celebration, type CelebrationWinner } from "@/components/celebration";
@@ -51,7 +51,7 @@ export default async function GamePage({ params }: PageProps<"/game/[id]">) {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-5 p-6">
       <h1 className="text-2xl font-bold capitalize">
-        {stockholmDayLabel(rows[0].played_on)}
+        {dayLabel(rows[0].played_on)}
       </h1>
 
       <Celebration winners={winners} shutBox={shutBox} />

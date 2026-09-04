@@ -11,9 +11,12 @@ export function stockholmToday(now: Date = new Date()): string {
   }).format(now);
 }
 
-// Human-friendly date for headings, e.g. "tisdag 11 augusti".
-export function stockholmDayLabel(date: string): string {
-  return new Intl.DateTimeFormat("sv-SE", {
+// Human-friendly date for headings, e.g. "Thursday 4 September".
+// The UI is English throughout; only stockholmToday() uses sv-SE, and only
+// because that locale happens to format as YYYY-MM-DD.
+// Anchored at midday UTC so converting a bare date can't slip across a DST edge.
+export function dayLabel(date: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Stockholm",
     weekday: "long",
     day: "numeric",

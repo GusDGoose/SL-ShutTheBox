@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stockholmToday } from "./dates";
+import { dayLabel, stockholmToday } from "./dates";
 
 describe("stockholmToday", () => {
   it("returns YYYY-MM-DD", () => {
@@ -23,5 +23,25 @@ describe("stockholmToday", () => {
   it("does NOT roll over just before the Stockholm midnight", () => {
     // 21:59 UTC in summer = 23:59 Stockholm — still the same day.
     expect(stockholmToday(new Date("2026-07-01T21:59:00Z"))).toBe("2026-07-01");
+  });
+});
+
+describe("dayLabel", () => {
+  it("reads as an English heading", () => {
+    expect(dayLabel("2026-09-04")).toBe("Friday 4 September");
+  });
+
+  it("is already capitalised, unlike the Swedish label it replaced", () => {
+    expect(dayLabel("2026-01-05")).toMatch(/^[A-Z]/);
+  });
+
+  // Anchoring at midday UTC is what stops a bare date drifting a day either
+  // way across a DST boundary.
+  it("does not drift across the spring DST change", () => {
+    expect(dayLabel("2026-03-29")).toBe("Sunday 29 March");
+  });
+
+  it("does not drift across the autumn DST change", () => {
+    expect(dayLabel("2026-10-25")).toBe("Sunday 25 October");
   });
 });
