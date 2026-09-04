@@ -14,6 +14,10 @@ export async function GET() {
       SUPABASE_URL_set: url.length > 0,
       SUPABASE_SERVICE_ROLE_KEY_set: key.length > 0,
       TEAM_PIN_set: (process.env.TEAM_PIN ?? "").length > 0,
+      // Without this the app fails closed and nobody gets past /pin, so it is
+      // the first thing to check after a deploy locks the office out.
+      SESSION_SECRET_set: (process.env.SESSION_SECRET ?? "").length > 0,
+      CRON_SECRET_set: (process.env.CRON_SECRET ?? "").length > 0,
       TEAMS_WEBHOOK_URL_set: (process.env.TEAMS_WEBHOOK_URL ?? "").length > 0,
       // https://<ref>.supabase.co — or 127.0.0.1 for the local stack
       url_looks_like_supabase: /^https?:\/\/[a-z0-9.]+(\.supabase\.co|:54321)\/?$/.test(url),

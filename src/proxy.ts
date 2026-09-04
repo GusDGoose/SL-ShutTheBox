@@ -1,22 +1,51 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { PIN_COOKIE, sha256Hex } from "@/lib/pin";
+import {
+  PIN_COOKIE,
+  WHO_COOKIE,
+  verifyPinCookie,
+  verifyWhoCookie,
+} from "@/lib/session";
+
+// Routes past the PIN that must not require an identity yet: /whoami is where
+// you choose one, and /players is where a new colleague adds themselves to the
+// roster before they can pick it.
+const IDENTITY_EXEMPT = ["/whoami", "/players"];
 
 // [concept: proxy (formerly "middleware")] Runs before every matched request,
 // in front of the app — the right place for auth gates. Next 16 renamed the
-// middleware convention to proxy.
+// middleware convention to proxy and runs it on the Node.js runtime, which is
+// why the cookie signing can use node:crypto.
 export async function proxy(request: NextRequest) {
-  const pin = process.env.TEAM_PIN;
-  const cookie = request.cookies.get(PIN_COOKIE)?.value;
+  // Gate one: does this device know the team PIN?
+  //
+  // Fails CLOSED: with TEAM_PIN or SESSION_SECRET unconfigured nobody gets in,
+  // and /pin says which is missing — safer than silently opening the app.
+  const knowsPin = verifyPinCookie(
+    request.cookies.get(PIN_COOKIE)?.value,
+    process.env.TEAM_PIN,
+  );
+  if (!knowsPin) return redirectTo(request, "/pin");
 
-  // Fail CLOSED: if TEAM_PIN is unconfigured, nobody gets in (the /pin page
-  // explains the misconfiguration) — safer than silently opening the app.
-  if (pin && cookie === (await sha256Hex(pin))) {
-    return NextResponse.next();
-  }
+  // Gate two: who is holding it? An edit has to be attributable, and the fika
+  // rota needs to know whose device this is.
+  const knowsWho =
+    verifyWhoCookie(request.cookies.get(WHO_COOKIE)?.value) !== null;
+  const { pathname } = request.nextUrl;
+  const exempt = IDENTITY_EXEMPT.some(
+    (base) => pathname === base || pathname.startsWith(`${base}/`),
+  );
+  if (!knowsWho && !exempt) return redirectTo(request, "/whoami");
 
+  return NextResponse.next();
+}
+
+function redirectTo(request: NextRequest, destination: string) {
   const url = request.nextUrl.clone();
-  url.pathname = "/pin";
-  url.search = `?next=${encodeURIComponent(request.nextUrl.pathname)}`;
+  url.pathname = destination;
+  // v1 forwarded only the pathname, so a deep link carrying query parameters
+  // lost them on the way through the gate.
+  const next = request.nextUrl.pathname + request.nextUrl.search;
+  url.search = `?next=${encodeURIComponent(next)}`;
   return NextResponse.redirect(url);
 }
 

@@ -1,7 +1,12 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { Settings } from "lucide-react";
 import { NavTabs } from "@/components/shell/nav-tabs";
 import { SoundToggle } from "@/components/shell/sound-toggle";
+import {
+  IdentityChip,
+  IdentityChipFallback,
+} from "@/components/shell/identity-chip";
 
 // The everyday chrome: brand, the four tabs, and a gear. Focus routes (the
 // board, the PIN gate) sit outside this group so nothing competes with them.
@@ -18,7 +23,11 @@ export default function ShellLayout({ children }: LayoutProps<"/">) {
           </span>
           Shut the Box
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
+          {/* Suspended so drawing the header never waits on the roster query. */}
+          <Suspense fallback={<IdentityChipFallback />}>
+            <IdentityChip />
+          </Suspense>
           <NavTabs />
           <SoundToggle className="text-ivory/70 hover:text-ivory" />
           <Link
