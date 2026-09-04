@@ -13,7 +13,7 @@ export type Player = {
 export type Game = {
   id: string;
   played_on: string; // YYYY-MM-DD
-  max_tile: 9 | 12;
+  max_tile: 12;
   created_at: string;
 };
 
@@ -29,7 +29,7 @@ export type GamePlayer = {
 export type GameResultRow = {
   game_id: string;
   played_on: string;
-  max_tile: 9 | 12;
+  max_tile: 12;
   player_id: string;
   score: number;
   tiles_open: number[] | null;

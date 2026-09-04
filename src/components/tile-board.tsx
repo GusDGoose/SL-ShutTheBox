@@ -2,22 +2,18 @@
 
 // The on-screen replica of the physical box: tiles start UP, tap to flip DOWN.
 // Controlled component — the parent owns which tiles are down.
+const TILES = Array.from({ length: 12 }, (_, i) => i + 1);
+
 export function TileBoard({
-  maxTile,
   tilesDown,
   onToggle,
 }: {
-  maxTile: 9 | 12;
   tilesDown: Set<number>;
   onToggle: (tile: number) => void;
 }) {
-  const tiles = Array.from({ length: maxTile }, (_, i) => i + 1);
-
   return (
-    <div
-      className={`grid gap-2 ${maxTile === 9 ? "grid-cols-9" : "grid-cols-6 sm:grid-cols-12"} max-sm:grid-cols-3`}
-    >
-      {tiles.map((tile) => {
+    <div className="grid grid-cols-6 gap-2 max-sm:grid-cols-3 sm:grid-cols-12">
+      {TILES.map((tile) => {
         const down = tilesDown.has(tile);
         return (
           <button

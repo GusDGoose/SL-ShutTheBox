@@ -12,27 +12,27 @@ export type SaveGameEntry = {
   score: number;
   tilesOpen: number[] | null; // null = manual score entry
 };
-export type SaveGamePayload = { maxTile: 9 | 12; entries: SaveGameEntry[] };
+export type SaveGamePayload = { entries: SaveGameEntry[] };
 export type SaveGameResult = { gameId: string } | { error: string };
 
-const MAX_SCORE: Record<number, number> = { 9: 45, 12: 78 };
+const MAX_TILE = 12;
+const MAX_SCORE = (MAX_TILE * (MAX_TILE + 1)) / 2; // 78
 
 function validate(payload: SaveGamePayload): string | null {
-  const { maxTile, entries } = payload;
-  if (maxTile !== 9 && maxTile !== 12) return "Invalid tile count.";
+  const { entries } = payload;
   if (!Array.isArray(entries) || entries.length === 0)
     return "At least one player must have played.";
   const ids = new Set(entries.map((e) => e.playerId));
   if (ids.size !== entries.length) return "A player appears twice.";
 
   for (const e of entries) {
-    if (!Number.isInteger(e.score) || e.score < 0 || e.score > MAX_SCORE[maxTile])
-      return `A score must be a whole number between 0 and ${MAX_SCORE[maxTile]}.`;
+    if (!Number.isInteger(e.score) || e.score < 0 || e.score > MAX_SCORE)
+      return `A score must be a whole number between 0 and ${MAX_SCORE}.`;
     if (e.tilesOpen !== null) {
       const valid =
         Array.isArray(e.tilesOpen) &&
         e.tilesOpen.every(
-          (t) => Number.isInteger(t) && t >= 1 && t <= maxTile,
+          (t) => Number.isInteger(t) && t >= 1 && t <= MAX_TILE,
         ) &&
         new Set(e.tilesOpen).size === e.tilesOpen.length;
       if (!valid) return "Board state is invalid.";
@@ -52,7 +52,7 @@ export async function saveGame(payload: SaveGamePayload): Promise<SaveGameResult
 
   const { data: game, error: gameError } = await sb
     .from("games")
-    .insert({ max_tile: payload.maxTile }) // played_on = DB default (Stockholm today)
+    .insert({}) // played_on + max_tile = DB defaults (Stockholm today, 12-tile)
     .select("id")
     .single();
   if (gameError || !game) return { error: gameError?.message ?? "Could not create game." };

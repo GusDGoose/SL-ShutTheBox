@@ -18,7 +18,6 @@ import { TileBoard } from "./tile-board";
 
 type State = {
   phase: "setup" | "playing" | "review";
-  maxTile: 9 | 12;
   order: string[]; // player ids, pick order = turn order
   current: number; // whose turn (index into order)
   editing: number | null; // index into entries when re-editing from review
@@ -27,7 +26,6 @@ type State = {
 
 type Action =
   | { type: "togglePlayer"; id: string }
-  | { type: "setMaxTile"; maxTile: 9 | 12 }
   | { type: "start" }
   | { type: "endTurn"; entry: SaveGameEntry }
   | { type: "edit"; index: number }
@@ -35,7 +33,6 @@ type Action =
 
 const initialState: State = {
   phase: "setup",
-  maxTile: 9,
   order: [],
   current: 0,
   editing: null,
@@ -50,8 +47,6 @@ function reducer(state: State, action: Action): State {
         : [...state.order, action.id];
       return { ...state, order };
     }
-    case "setMaxTile":
-      return { ...state, maxTile: action.maxTile };
     case "start":
       if (state.order.length === 0) return state;
       return { ...state, phase: "playing", current: 0, entries: [], editing: null };
@@ -78,18 +73,17 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+const MAX_TILE = 12;
 const range = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
 // One player's turn: tile board (default) or manual score pad.
 function TurnPanel({
   player,
-  maxTile,
   initial,
   onDone,
   onCancel,
 }: {
   player: Player;
-  maxTile: 9 | 12;
   initial: SaveGameEntry | null;
   onDone: (entry: SaveGameEntry) => void;
   onCancel: (() => void) | null;
@@ -100,13 +94,13 @@ function TurnPanel({
   const [tilesDown, setTilesDown] = useState<Set<number>>(() => {
     if (initial?.tilesOpen) {
       const open = new Set(initial.tilesOpen);
-      return new Set(range(maxTile).filter((t) => !open.has(t)));
+      return new Set(range(MAX_TILE).filter((t) => !open.has(t)));
     }
     return new Set();
   });
 
-  const total = (maxTile * (maxTile + 1)) / 2;
-  const openTiles = range(maxTile).filter((t) => !tilesDown.has(t));
+  const total = (MAX_TILE * (MAX_TILE + 1)) / 2;
+  const openTiles = range(MAX_TILE).filter((t) => !tilesDown.has(t));
   const liveScore = openTiles.reduce((a, b) => a + b, 0);
 
   return (
@@ -136,7 +130,6 @@ function TurnPanel({
       {mode === "board" ? (
         <>
           <TileBoard
-            maxTile={maxTile}
             tilesDown={tilesDown}
             onToggle={(tile) =>
               setTilesDown((prev) => {
@@ -223,7 +216,6 @@ export function GameScreen({
   function finish() {
     startTransition(async () => {
       const res: SaveGameResult = await saveGame({
-        maxTile: state.maxTile,
         entries: state.entries,
       });
       if ("error" in res) setError(res.error);
@@ -250,25 +242,6 @@ export function GameScreen({
             selected={state.order}
             onToggle={(id) => dispatch({ type: "togglePlayer", id })}
           />
-        </section>
-        <section className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide opacity-60">
-            Tiles
-          </h2>
-          {([9, 12] as const).map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => dispatch({ type: "setMaxTile", maxTile: n })}
-              className={`rounded-lg border px-4 py-2 text-sm font-medium ${
-                state.maxTile === n
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-black/20 opacity-60 dark:border-white/20"
-              }`}
-            >
-              1–{n}
-            </button>
-          ))}
         </section>
         <button
           type="button"
@@ -301,7 +274,6 @@ export function GameScreen({
           // key resets the panel's internal state for each new turn / edit
           key={state.editing ?? `turn-${state.current}`}
           player={player}
-          maxTile={state.maxTile}
           initial={editingEntry}
           onDone={(entry) => dispatch({ type: "endTurn", entry })}
           onCancel={
