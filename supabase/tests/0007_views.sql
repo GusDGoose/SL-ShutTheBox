@@ -303,17 +303,25 @@ select ok(
 -- ---------------------------------------------------------------------------
 -- Seasons and trends
 -- ---------------------------------------------------------------------------
+-- Scoped to the fixture's own players on purpose. These tests run inside a
+-- transaction but on top of whatever the database already holds, so a global
+-- count here would break the moment anyone else had played that quarter — and
+-- would certainly break against a copy of production.
 select is(
   (select count(*)::int from season_standings
-    where season_id = ensure_season('2026-09-01')),
+    where season_id = ensure_season('2026-09-01')
+      and player_id in ('aaaa0000-0000-0000-0000-000000000001',
+                        'aaaa0000-0000-0000-0000-000000000002',
+                        'aaaa0000-0000-0000-0000-000000000003')),
   2,
-  'season standings cover the players who played that season'
+  'season standings cover the fixture players who actually played'
 );
 select is(
-  (select player_id from season_standings
-    where season_id = ensure_season('2026-09-01') and rnk = 1),
-  'aaaa0000-0000-0000-0000-000000000001'::uuid,
-  'and rank by day wins first'
+  (select day_wins from season_standings
+    where season_id = ensure_season('2026-09-01')
+      and player_id = 'aaaa0000-0000-0000-0000-000000000001'),
+  4,
+  'and count a day win per day won, not per game'
 );
 select ok(
   not exists (select 1 from season_champions
@@ -331,15 +339,16 @@ select is(
 -- ---------------------------------------------------------------------------
 -- Live games
 -- ---------------------------------------------------------------------------
-select is(
-  (select count(*)::int from live_games),
-  1,
-  'only the in-progress game is live'
+select ok(
+  exists (select 1 from live_games
+           where id = 'ccc00000-0000-0000-0000-000000000005'),
+  'the in-progress game is live'
 );
-select is(
-  (select id from live_games),
-  'ccc00000-0000-0000-0000-000000000005'::uuid,
-  'and it is the right one'
+select ok(
+  not exists (select 1 from live_games
+               where id in ('ccc00000-0000-0000-0000-000000000004',
+                            'ccc00000-0000-0000-0000-000000000006')),
+  'a finished or abandoned game is not'
 );
 
 select * from finish();
