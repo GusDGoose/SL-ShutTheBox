@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 import { Fraunces, Geist } from "next/font/google";
 import { Toaster } from "@/components/ui/toast";
+import { AudioProvider } from "@/components/ui/audio-provider";
 import { ThemeSync } from "@/components/shell/theme-sync";
 import { InlineScript } from "@/components/shell/inline-script";
 import {
@@ -85,7 +86,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="flex min-h-full flex-col bg-canvas text-ink">
         <ThemeSync theme={theme} mode={mode} />
-        <Toaster>{children}</Toaster>
+        <AudioProvider>
+          <Toaster>{children}</Toaster>
+        </AudioProvider>
       </body>
     </html>
   );

@@ -25,8 +25,8 @@ export function PlayerPicker({
             aria-pressed={picked}
             className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all active:scale-95 ${
               picked
-                ? "border-foreground bg-foreground text-background"
-                : "border-black/20 dark:border-white/20"
+                ? "border-brass bg-brass text-ink"
+                : "border-line hover:border-brass/50"
             }`}
           >
             {picked && (

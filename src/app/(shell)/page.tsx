@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { GameResultRow, Player } from "@/lib/types";
 import { dayLabel, stockholmToday } from "@/lib/dates";
 import { supabaseAdmin } from "@/lib/supabase";
+import { buttonClass } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,7 @@ export default async function Home() {
         </p>
         <Link
           href="/play"
-          className="rounded-2xl bg-foreground px-8 py-4 text-lg font-semibold text-background transition-transform active:scale-95"
+          className={buttonClass("primary", "lg")}
         >
           Start today&apos;s game
         </Link>

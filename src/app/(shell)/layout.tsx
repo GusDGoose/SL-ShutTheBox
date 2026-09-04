@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Settings } from "lucide-react";
 import { NavTabs } from "@/components/shell/nav-tabs";
+import { SoundToggle } from "@/components/shell/sound-toggle";
 
 // The everyday chrome: brand, the four tabs, and a gear. Focus routes (the
 // board, the PIN gate) sit outside this group so nothing competes with them.
@@ -19,6 +20,7 @@ export default function ShellLayout({ children }: LayoutProps<"/">) {
         </Link>
         <div className="flex items-center gap-2">
           <NavTabs />
+          <SoundToggle className="text-ivory/70 hover:text-ivory" />
           <Link
             href="/settings"
             aria-label="Settings"

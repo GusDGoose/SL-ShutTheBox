@@ -9,8 +9,22 @@ import {
   type SaveGameResult,
 } from "@/app/(shell)/play/actions";
 import { PlayerPicker } from "./player-picker";
-import { ScorePad } from "./score-pad";
-import { TileBoard } from "./tile-board";
+import { Board } from "./board/board";
+import { BoardModeToggle, type BoardMode } from "./board/board-mode-toggle";
+import { MiniBoard } from "./board/mini-board";
+import { ScoreKeypad } from "./board/score-keypad";
+import { ScoreReadout } from "./board/score-readout";
+import { useSfx } from "./ui/audio-provider";
+import { Button, buttonClass } from "./ui/button";
+import {
+  boardTiles,
+  instantWinOf,
+  isShutBox,
+  maxScoreOf,
+  scoreOf,
+  tilesOf,
+  type Ruleset,
+} from "@/lib/rules";
 
 // [concept: reducer state machine] The whole in-progress game lives in this
 // client-side reducer — setup → playing (one turn per player) → review.
@@ -27,7 +41,7 @@ type State = {
 type Action =
   | { type: "togglePlayer"; id: string }
   | { type: "start" }
-  | { type: "endTurn"; entry: SaveGameEntry }
+  | { type: "endTurn"; entry: SaveGameEntry; endsGame: boolean }
   | { type: "edit"; index: number }
   | { type: "cancelEdit" };
 
@@ -58,10 +72,10 @@ function reducer(state: State, action: Action): State {
         return { ...state, entries, editing: null, phase: "review" };
       }
       const entries = [...state.entries, action.entry];
-      // Shut the box (score 0) ends the game instantly — remaining players
-      // never get a turn and are simply not saved.
-      const gameOver =
-        action.entry.score === 0 || state.current + 1 >= state.order.length;
+      // Whether shutting the box ends the game is a ruleset question, so the
+      // turn panel decides it — a highest-wins season would read a 0 as the
+      // worst possible turn, not an instant win.
+      const gameOver = action.endsGame || state.current + 1 >= state.order.length;
       return gameOver
         ? { ...state, entries, phase: "review" }
         : { ...state, entries, current: state.current + 1 };
@@ -73,122 +87,110 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-const MAX_TILE = 12;
-const range = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
-
-// One player's turn: tile board (default) or manual score pad.
+// One player's turn: the board, or the keypad when the game was already played
+// on the real box.
 function TurnPanel({
+  rules,
   player,
   initial,
   onDone,
   onCancel,
 }: {
+  rules: Ruleset;
   player: Player;
   initial: SaveGameEntry | null;
-  onDone: (entry: SaveGameEntry) => void;
+  onDone: (entry: SaveGameEntry, endsGame: boolean) => void;
   onCancel: (() => void) | null;
 }) {
-  const [mode, setMode] = useState<"board" | "pad">(
-    initial && initial.tilesOpen === null ? "pad" : "board",
+  const { play } = useSfx();
+  const tiles = boardTiles(rules);
+
+  const [mode, setMode] = useState<BoardMode>(
+    initial && initial.tilesOpen === null ? "keypad" : "board",
   );
-  const [tilesDown, setTilesDown] = useState<Set<number>>(() => {
+  const [down, setDown] = useState<Set<number>>(() => {
     if (initial?.tilesOpen) {
       const open = new Set(initial.tilesOpen);
-      return new Set(range(MAX_TILE).filter((t) => !open.has(t)));
+      return new Set(tiles.filter((t) => !open.has(t)));
     }
     return new Set();
   });
 
-  const total = (MAX_TILE * (MAX_TILE + 1)) / 2;
-  const openTiles = range(MAX_TILE).filter((t) => !tilesDown.has(t));
-  const liveScore = openTiles.reduce((a, b) => a + b, 0);
+  const openTiles = tiles.filter((t) => !down.has(t));
+  const liveScore = scoreOf(rules, openTiles);
+  const shut = isShutBox(openTiles);
+
+  function toggle(tile: number) {
+    setDown((prev) => {
+      const next = new Set(prev);
+      if (next.has(tile)) {
+        next.delete(tile);
+        play("tileUp");
+      } else {
+        next.add(tile);
+        // The last tile going down gets the slam and the bell instead.
+        play(next.size === tiles.length ? "shut" : "tileDown");
+      }
+      return next;
+    });
+  }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-xl">
           <span className="mr-2 text-3xl">{player.emoji}</span>
           <span className="font-bold">{player.name}</span>
-          <span className="opacity-60"> is up</span>
+          <span className="text-ink-muted"> is up</span>
         </div>
-        <div className="flex rounded-lg border border-black/15 text-sm dark:border-white/15">
-          {(["board", "pad"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              className={`px-3 py-1.5 first:rounded-l-lg last:rounded-r-lg ${
-                mode === m ? "bg-foreground font-semibold text-background" : "opacity-60"
-              }`}
-            >
-              {m === "board" ? "Board" : "Type score"}
-            </button>
-          ))}
-        </div>
+        <BoardModeToggle mode={mode} onChange={setMode} />
       </div>
 
       {mode === "board" ? (
         <>
-          <TileBoard
-            tilesDown={tilesDown}
-            onToggle={(tile) =>
-              setTilesDown((prev) => {
-                const next = new Set(prev);
-                if (next.has(tile)) next.delete(tile);
-                else next.add(tile);
-                return next;
-              })
-            }
-          />
-          <div className="flex items-center justify-between">
-            <p className="text-lg">
-              Score if you stop now:{" "}
-              <span className={`font-bold ${liveScore === 0 ? "text-green-600" : ""}`}>
-                {liveScore}
-              </span>
-              {liveScore === 0 && " — SHUT THE BOX! 📦"}
-            </p>
+          <Board rules={rules} down={down} onToggle={toggle} />
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <ScoreReadout rules={rules} value={liveScore} shut={shut} />
             <div className="flex gap-2">
               {onCancel && (
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="rounded-lg px-4 py-2 text-sm opacity-70 hover:opacity-100"
-                >
+                <Button variant="ghost" onClick={onCancel}>
                   Cancel
-                </button>
+                </Button>
               )}
-              <button
-                type="button"
-                onClick={() =>
-                  onDone({ playerId: player.id, score: liveScore, tilesOpen: openTiles })
-                }
-                className="rounded-lg bg-foreground px-5 py-2 font-semibold text-background active:scale-95"
+              <Button
+                size="lg"
+                onClick={() => {
+                  play("endTurn");
+                  onDone(
+                    { playerId: player.id, score: liveScore, tilesOpen: openTiles },
+                    shut && instantWinOf(rules),
+                  );
+                }}
               >
-                End turn
-              </button>
+                End turn →
+              </Button>
             </div>
           </div>
-          <p className="text-xs opacity-50">
-            Tap the tiles you flipped down on the real box — score is what stays up.
+          <p className="text-xs text-ink-muted">
+            Tap the tiles you flipped down on the real box — your score is
+            whatever stays up.
           </p>
         </>
       ) : (
-        <div className="flex items-end gap-3">
-          <ScorePad
-            maxScore={total}
+        <div className="flex flex-col gap-3">
+          <ScoreKeypad
+            max={maxScoreOf(rules)}
             onSubmit={(score) =>
-              onDone({ playerId: player.id, score, tilesOpen: null })
+              onDone(
+                { playerId: player.id, score, tilesOpen: null },
+                score === 0 && instantWinOf(rules),
+              )
             }
           />
           {onCancel && (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="rounded-lg px-4 py-2 text-sm opacity-70 hover:opacity-100"
-            >
+            <Button variant="ghost" onClick={onCancel}>
               Cancel
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -197,9 +199,11 @@ function TurnPanel({
 }
 
 export function GameScreen({
+  rules,
   players,
   gamesToday,
 }: {
+  rules: Ruleset; // the current season's ruleset
   players: Player[]; // active roster
   gamesToday: number;
 }) {
@@ -247,7 +251,7 @@ export function GameScreen({
           type="button"
           disabled={state.order.length === 0}
           onClick={() => dispatch({ type: "start" })}
-          className="self-start rounded-2xl bg-foreground px-8 py-4 text-lg font-semibold text-background disabled:opacity-40"
+          className={`${buttonClass("primary", "lg")} self-start`}
         >
           Roll the dice 🎲
         </button>
@@ -271,11 +275,14 @@ export function GameScreen({
           </p>
         )}
         <TurnPanel
+          rules={rules}
           // key resets the panel's internal state for each new turn / edit
           key={state.editing ?? `turn-${state.current}`}
           player={player}
           initial={editingEntry}
-          onDone={(entry) => dispatch({ type: "endTurn", entry })}
+          onDone={(entry, endsGame) =>
+            dispatch({ type: "endTurn", entry, endsGame })
+          }
           onCancel={
             state.editing !== null ? () => dispatch({ type: "cancelEdit" }) : null
           }
@@ -308,9 +315,11 @@ export function GameScreen({
                 <span>
                   <span className="mr-2">{p?.emoji}</span>
                   <span className="font-medium">{p?.name}</span>
-                  {e.tilesOpen === null && (
-                    <span className="ml-2 text-xs opacity-50">(typed)</span>
-                  )}
+                  <MiniBoard
+                    tiles={tilesOf(rules)}
+                    open={e.tilesOpen}
+                    className="ml-2 inline-block align-middle"
+                  />
                 </span>
                 <span className="text-xl font-bold">
                   {e.score === 0 ? "📦 0" : e.score}
@@ -327,7 +336,7 @@ export function GameScreen({
         type="button"
         disabled={pending}
         onClick={finish}
-        className="self-start rounded-2xl bg-foreground px-8 py-4 text-lg font-semibold text-background disabled:opacity-50"
+        className={`${buttonClass("primary", "lg")} self-start`}
       >
         {pending ? "Saving…" : "Finish & crown 👑"}
       </button>

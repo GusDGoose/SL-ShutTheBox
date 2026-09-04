@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import type { Player } from "@/lib/types";
+import { buttonClass } from "@/components/ui/button";
 import {
   createPlayer,
   togglePlayerActive,
@@ -40,7 +41,7 @@ export function AddPlayerForm() {
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
+        className={buttonClass("primary")}
       >
         {pending ? "Adding…" : "Add player"}
       </button>

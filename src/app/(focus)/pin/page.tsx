@@ -1,4 +1,5 @@
 import { verifyPin } from "./actions";
+import { buttonClass } from "@/components/ui/button";
 
 export default async function PinPage({
   searchParams,
@@ -40,7 +41,7 @@ export default async function PinPage({
         )}
         <button
           type="submit"
-          className="rounded-xl bg-foreground px-6 py-3 font-semibold text-background transition-transform active:scale-95"
+          className={buttonClass("primary")}
         >
           Open the box
         </button>

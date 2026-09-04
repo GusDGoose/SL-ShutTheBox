@@ -211,3 +211,110 @@
     color: var(--color-ink-muted);
   }
 }
+
+@layer components {
+  /* The tray the tiles sit in. The perspective lives here so every tile inside
+     shares one vanishing point — set per tile they would each flip towards
+     their own centre and the row would look bent. */
+  .tray {
+    perspective: 900px;
+  }
+
+  .tile {
+    display: grid;
+    aspect-ratio: 2 / 3;
+    border-radius: var(--radius-tile);
+    background: transparent;
+    transform-style: preserve-3d;
+  }
+
+  .tile-face {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 0.4rem;
+    border-radius: var(--radius-tile);
+    background-image: var(--grain),
+      linear-gradient(
+        180deg,
+        var(--color-wood-light) 0%,
+        var(--color-wood) 78%,
+        var(--color-wood-dark) 100%
+      );
+    box-shadow: var(--shadow-tile-up);
+    color: var(--color-ink);
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(1.25rem, 4vw, 1.75rem);
+    /* Hinged along the top edge, like the real thing. */
+    transform-origin: top center;
+    transition:
+      transform var(--duration-flip) var(--ease-flip),
+      filter var(--duration-flip) var(--ease-flip),
+      box-shadow var(--duration-flip) var(--ease-flip);
+  }
+
+  /* The brass hinge strip, with two screws. */
+  .tile-face::before {
+    content: "";
+    position: absolute;
+    inset: 0.18rem 0.25rem auto;
+    height: 0.2rem;
+    border-radius: 999px;
+    background:
+      radial-gradient(circle at 15% 50%, rgb(0 0 0 / 0.45) 0 22%, transparent 23%),
+      radial-gradient(circle at 85% 50%, rgb(0 0 0 / 0.45) 0 22%, transparent 23%),
+      linear-gradient(180deg, var(--color-brass), var(--color-wood-dark));
+    opacity: 0.85;
+  }
+
+  .tile-face {
+    position: relative;
+  }
+
+  .tile[data-down="true"] .tile-face {
+    transform: rotateX(-78deg);
+    filter: brightness(0.62);
+    box-shadow: var(--shadow-tile-down);
+  }
+
+  /* A tile worth more than its number under the current ruleset. */
+  .tile[data-golden="true"] .tile-face {
+    outline: 2px solid var(--color-brass);
+    outline-offset: -2px;
+  }
+
+  /* Every tile down: the tray lights up. */
+  .tray[data-shut="true"] {
+    box-shadow:
+      var(--shadow-tray),
+      0 0 0 3px var(--color-shut),
+      0 0 28px -4px var(--color-shut);
+    transition: box-shadow var(--duration-slow) var(--ease-out);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* Still read as down, just without the tumble. */
+    .tile[data-down="true"] .tile-face {
+      transform: none;
+      opacity: 0.45;
+    }
+  }
+}
+
+@layer components {
+  /* The tile count is a custom property so the same grid serves a 9, 10 or
+     12-tile board. Two rows on a phone; one long row from sm up, which is the
+     shape of the real box. The media query has to live here — an inline style
+     cannot hold one. */
+  .tile-grid {
+    display: grid;
+    grid-template-columns: repeat(var(--tile-cols), minmax(0, 1fr));
+  }
+  @media (min-width: 40rem) {
+    .tile-grid {
+      grid-template-columns: repeat(var(--tile-cols-wide), minmax(0, 1fr));
+    }
+  }
+}
