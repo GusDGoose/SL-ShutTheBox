@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { timingSafeEqual } from "node:crypto";
 import { supabaseAdmin } from "./supabase";
 import {
@@ -55,6 +56,23 @@ export const getIdentity = cache(async (): Promise<Player | null> => {
   // as, so a cookie from before they were benched stops counting.
   return player.is_active ? player : null;
 });
+
+/**
+ * For a page that cannot do anything useful without knowing who is holding the
+ * device — starting a game needs somebody to be the scorekeeper.
+ *
+ * The Proxy gate cannot cover this on its own: it verifies the cookie's
+ * SIGNATURE, while getIdentity() verifies the player still EXISTS and is
+ * active. A correctly signed cookie for a player who has since been benched (or
+ * whose row is gone) therefore passes the gate and then leaves the app with no
+ * identity — pressing a button would fail with "tell us who you are" and no way
+ * back. Checking here, where the roster has already been read, costs nothing.
+ */
+export async function requireIdentityPage(next: string): Promise<Player> {
+  const player = await getIdentity();
+  if (!player) redirect(`/whoami?next=${encodeURIComponent(next)}`);
+  return player;
+}
 
 export type Session = { player: Player };
 

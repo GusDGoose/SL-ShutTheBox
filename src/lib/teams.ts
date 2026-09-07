@@ -1,4 +1,5 @@
 import "server-only";
+import { supabaseAdmin } from "./supabase";
 
 // [concept: webhook + Adaptive Card] Classic Office 365 "Incoming Webhook"
 // connectors are retired — this posts to a Teams *Workflows* webhook
@@ -71,4 +72,60 @@ export async function postWinnerCard(winners: AnnouncedWinner[]): Promise<void> 
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`Teams webhook responded ${res.status}`);
+}
+
+/**
+ * Announces a finished game, reading the winner from `game_results`.
+ *
+ * v1 recomputed it here with Math.min over the payload it had just posted,
+ * which made three separate implementations of "who won" — the SQL view, the
+ * review screen, and this. They already disagreed: a solo game showed no crown
+ * on the review screen but crowned the player everywhere else. The view is now
+ * the only one that decides.
+ */
+export async function announceWinners(gameId: string): Promise<void> {
+  if (!process.env.TEAMS_WEBHOOK_URL) return; // feature silently off
+
+  const sb = supabaseAdmin();
+
+  const { data: results, error } = await sb
+    .from("game_results")
+    .select("player_id, score, is_winner, is_shut_box")
+    .eq("game_id", gameId);
+  if (error) throw new Error(error.message);
+
+  const winners = (results ?? []).filter(
+    (r) => (r as { is_winner: boolean }).is_winner,
+  ) as { player_id: string; score: number; is_shut_box: boolean }[];
+  if (winners.length === 0) return;
+
+  const ids = winners.map((w) => w.player_id);
+  const [playersRes, streaksRes] = await Promise.all([
+    sb.from("players").select("id, name, emoji").in("id", ids),
+    sb.from("player_streaks").select("player_id, current_streak").in("player_id", ids),
+  ]);
+
+  const names = new Map(
+    ((playersRes.data ?? []) as { id: string; name: string; emoji: string }[]).map(
+      (p) => [p.id, p],
+    ),
+  );
+  const streaks = new Map(
+    (
+      (streaksRes.data ?? []) as {
+        player_id: string;
+        current_streak: number;
+      }[]
+    ).map((s) => [s.player_id, s.current_streak]),
+  );
+
+  await postWinnerCard(
+    winners.map((w) => ({
+      name: names.get(w.player_id)?.name ?? "Someone",
+      emoji: names.get(w.player_id)?.emoji ?? "🎲",
+      score: w.score,
+      streak: streaks.get(w.player_id) ?? 0,
+      shutBox: w.is_shut_box,
+    })),
+  );
 }

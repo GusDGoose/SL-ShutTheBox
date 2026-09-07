@@ -1,86 +1,99 @@
-import type { GameResultRow, Player, PlayerStreakRow } from "@/lib/types";
-import { dayLabel } from "@/lib/dates";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { getIdentity } from "@/lib/auth";
+import { parseSnapshot } from "@/lib/live";
 import { supabaseAdmin } from "@/lib/supabase";
-import { extractVideoId } from "@/lib/youtube";
-import { Celebration, type CelebrationWinner } from "@/components/celebration";
+import { buttonClass } from "@/components/ui/button";
+import { FinishedGame } from "@/components/game/finished-game";
+import { GameController } from "@/components/game/game-controller";
+import { WatchGame } from "@/components/game/watch-game";
 
 export const dynamic = "force-dynamic";
 
-// Result + celebration page. Server-rendered from the DB, so it survives
-// refresh and can be reopened any time (the confetti happily fires again).
-export default async function GamePage({ params }: PageProps<"/game/[id]">) {
+const UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * One route for a game whether it is being played or already crowned, so a
+ * spectator's URL does not change under them at the moment it finishes.
+ */
+export default async function GamePage({
+  params,
+  searchParams,
+}: PageProps<"/game/[id]">) {
   const { id } = await params;
-  const sb = supabaseAdmin();
+  const { crown } = await searchParams;
 
-  const { data: results, error } = await sb
-    .from("game_results")
-    .select("*")
-    .eq("game_id", id)
-    .order("score", { ascending: true });
-  if (error) throw new Error(error.message);
-  if (!results || results.length === 0) {
-    return <main className="p-10 text-center opacity-60">Game not found.</main>;
-  }
-  const rows = results as GameResultRow[];
-  const winnerIds = rows.filter((r) => r.is_winner).map((r) => r.player_id);
+  // v1 passed the raw id straight to Postgres, so a link with a typo in it
+  // raised 22P02 and the user got a 500 instead of "not found".
+  if (!UUID.test(id)) notFound();
 
-  const [playersRes, streaksRes] = await Promise.all([
-    sb.from("players").select("*").in("id", rows.map((r) => r.player_id)),
-    sb.from("player_streaks").select("*").in("player_id", winnerIds),
-  ]);
-  if (playersRes.error) throw new Error(playersRes.error.message);
-  if (streaksRes.error) throw new Error(streaksRes.error.message);
-
-  const byId = new Map((playersRes.data as Player[]).map((p) => [p.id, p]));
-  const streakById = new Map(
-    (streaksRes.data as PlayerStreakRow[]).map((s) => [s.player_id, s]),
-  );
-
-  const winners: CelebrationWinner[] = winnerIds.map((pid) => {
-    const p = byId.get(pid);
-    return {
-      name: p?.name ?? "?",
-      emoji: p?.emoji ?? "🎲",
-      streak: streakById.get(pid)?.current_streak ?? 0,
-      videoId: p?.song_url ? extractVideoId(p.song_url) : null,
-      songUrl: p?.song_url ?? null,
-    };
+  const { data, error } = await supabaseAdmin().rpc("live_game_snapshot", {
+    p_game_id: id,
   });
-  const shutBox = rows.some((r) => r.is_shut_box);
+  if (error) throw new Error(error.message);
+  if (!data) notFound();
+
+  const snapshot = parseSnapshot(data);
+  // WP-B8 replaces this with a "deleted" banner and a Restore button.
+  if (snapshot.game.deleted) notFound();
+
+  const me = await getIdentity();
+  const shell = "mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-6";
+
+  if (snapshot.game.status === "finished") {
+    return (
+      <main className={shell}>
+        <FinishedGame
+          gameId={snapshot.game.id}
+          rules={snapshot.game.rules}
+          celebrate={crown === "1"}
+        />
+      </main>
+    );
+  }
+
+  if (snapshot.game.status === "abandoned") {
+    return (
+      <main className={`${shell} items-center text-center`}>
+        <span aria-hidden className="text-5xl">
+          🫥
+        </span>
+        <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold">
+          This game was abandoned.
+        </h1>
+        <p className="text-sm text-ink-muted">
+          It does not count towards anyone&apos;s stats.
+        </p>
+        <div className="flex gap-2">
+          <Link href="/play" className={buttonClass("primary")}>
+            Start a new one 🎲
+          </Link>
+          <Link href="/" className={buttonClass("secondary")}>
+            Today
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  const isScorekeeper =
+    me !== null && snapshot.game.scorekeeper_player_id === me.id;
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-5 p-6">
-      <h1 className="text-2xl font-bold capitalize">
-        {dayLabel(rows[0].played_on)}
-      </h1>
-
-      <Celebration winners={winners} shutBox={shutBox} />
-
-      <ul className="flex flex-col gap-2">
-        {rows.map((r) => {
-          const p = byId.get(r.player_id);
-          return (
-            <li
-              key={r.player_id}
-              className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
-                r.is_winner
-                  ? "border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950"
-                  : "border-black/10 dark:border-white/10"
-              }`}
-            >
-              <span>
-                <span className="mr-2">{p?.emoji}</span>
-                <span className="font-medium">{p?.name}</span>
-                {r.is_shut_box && <span className="ml-2">📦</span>}
-              </span>
-              <span className="text-xl font-bold">
-                {r.score}
-                {r.is_winner && " 👑"}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+    <main className={shell}>
+      {isScorekeeper ? (
+        <GameController initial={snapshot} />
+      ) : (
+        <WatchGame
+          initial={snapshot}
+          scorekeeperName={
+            snapshot.players.find(
+              (p) => p.player_id === snapshot.game.scorekeeper_player_id,
+            )?.name ?? null
+          }
+        />
+      )}
     </main>
   );
 }
