@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireSession, SessionError } from "@/lib/auth";
+import { hasPin, requireSession, SessionError } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-errors";
 import { parseSnapshot, type LiveSnapshot } from "@/lib/live";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -35,6 +35,24 @@ async function withSession<T = object>(
     if (e instanceof SessionError) return { ok: false, error: e.message };
     throw e;
   }
+}
+
+/**
+ * For reads, which need the PIN but not a name.
+ *
+ * Watching a game deliberately does not require saying who you are — the game
+ * page renders for anyone past the PIN gate. Gating the read on an identity as
+ * well made the polling fallback fail silently on exactly those devices: the
+ * poll fired every few seconds, the action refused every time, and the board
+ * sat frozen while the indicator claimed it was catching up.
+ */
+async function withPin<T = object>(
+  run: () => Promise<ActionResult<T>>,
+): Promise<ActionResult<T>> {
+  if (!(await hasPin())) {
+    return { ok: false, error: "Enter the team PIN first." };
+  }
+  return run();
 }
 
 type SnapshotResult = ActionResult<{ snapshot: LiveSnapshot }>;
@@ -169,7 +187,7 @@ export async function finishGame(
 export async function fetchLiveSnapshot(
   gameId: string,
 ): Promise<SnapshotResult> {
-  return withSession(() =>
+  return withPin(() =>
     rpcSnapshot("live_game_snapshot", { p_game_id: gameId }),
   );
 }

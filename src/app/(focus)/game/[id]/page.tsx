@@ -91,6 +91,7 @@ export default async function GamePage({
     <main className={shell}>
       <WatchGame
         initial={snapshot}
+        knowsWho={me !== null}
         scorekeeperName={
           snapshot.players.find(
             (p) => p.player_id === snapshot.game.scorekeeper_player_id,

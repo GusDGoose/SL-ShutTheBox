@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Board } from "@/components/board/board";
 import { ConnectionDot } from "@/components/game/connection-dot";
@@ -23,9 +24,17 @@ import { claimScorekeeper } from "@/app/(focus)/game/actions";
 export function WatchGame({
   initial,
   scorekeeperName,
+  knowsWho,
 }: {
   initial: LiveSnapshot;
   scorekeeperName: string | null;
+  /**
+   * Whether this device has said who is holding it. Watching only needs the
+   * PIN, but taking over has to be attributable — and offering a button that
+   * is going to be refused is a dead end with no way out of it, which is the
+   * same trap a benched player's still-signed cookie falls into.
+   */
+  knowsWho: boolean;
 }) {
   const { snapshot, connection } = useLiveGame(initial.game.id, initial);
   const [confirming, setConfirming] = useState(false);
@@ -107,13 +116,22 @@ export function WatchGame({
       <ResultsList snapshot={snapshot} heading="So far" />
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button
-          variant="ghost"
-          disabled={pending}
-          onClick={() => setConfirming(true)}
-        >
-          Take over as scorekeeper
-        </Button>
+        {knowsWho ? (
+          <Button
+            variant="ghost"
+            disabled={pending}
+            onClick={() => setConfirming(true)}
+          >
+            Take over as scorekeeper
+          </Button>
+        ) : (
+          <Link
+            href={`/whoami?next=/game/${snapshot.game.id}`}
+            className="text-sm font-semibold text-ink-muted underline hover:text-ink"
+          >
+            Say who you are to take over
+          </Link>
+        )}
       </div>
       <p className="text-xs text-ink-muted">
         {keeper ? `${keeper} is keeping score.` : "Nobody is keeping score."}

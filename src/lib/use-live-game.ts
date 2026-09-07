@@ -76,7 +76,14 @@ export function useLiveGame(gameId: string, initial: LiveSnapshot) {
 
     const startPolling = () => {
       if (poll) return;
-      poll = setInterval(() => void refetch(), POLL_MS);
+      poll = setInterval(() => {
+        void refetch().then((ok) => {
+          if (cancelled) return;
+          // A poll that cannot reach the server means the board on screen is
+          // stale, and "catching up" would be a lie.
+          setConnection(ok ? "polling" : "offline");
+        });
+      }, POLL_MS);
     };
     const stopPolling = () => {
       if (!poll) return;
@@ -89,6 +96,17 @@ export function useLiveGame(gameId: string, initial: LiveSnapshot) {
       startPolling();
       return () => stopPolling();
     }
+
+    // NOTE (WP-B7): polling here is a fallback only, and it is NOT proven.
+    // Measured behaviour with the Realtime service stopped: supabase-js reports
+    // no status at all — it retries quietly — so this error-triggered fallback
+    // never starts and a board can sit frozen while the indicator still reads
+    // "Catching up". Starting the poll unconditionally instead was tried and
+    // made things worse: a server-action POST every few seconds appears to keep
+    // the channel from ever reaching SUBSCRIBED, so the LIVE path broke too.
+    // Reverted to this, which is the version verified to go live and deliver
+    // broadcasts. Fixing the fallback properly is a D5 follow-up; the honest
+    // summary today is that live updates work and the degraded path does not.
 
     // A private channel is authorized by the RLS policy on realtime.messages,
     // which needs the client's token set even for anon.
@@ -109,7 +127,7 @@ export function useLiveGame(gameId: string, initial: LiveSnapshot) {
         if (cancelled) return;
         if (status === "SUBSCRIBED") {
           setConnection("live");
-          stopPolling();
+          stopPolling();   // the channel is carrying updates now
           // Close the gap between the server render and this subscription: a
           // tap in that window would otherwise be missed until the next one.
           void refetch();
