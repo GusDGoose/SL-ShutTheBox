@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Undo2 } from "lucide-react";
 import { Board } from "@/components/board/board";
@@ -10,6 +10,7 @@ import {
 } from "@/components/board/board-mode-toggle";
 import { ScoreKeypad } from "@/components/board/score-keypad";
 import { ScoreReadout } from "@/components/board/score-readout";
+import { ConnectionDot } from "@/components/game/connection-dot";
 import { ResultsList } from "@/components/game/results-list";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -22,6 +23,7 @@ import {
   type LiveSnapshot,
 } from "@/lib/live";
 import { boardTiles, instantWinOf, maxScoreOf, scoreOf } from "@/lib/rules";
+import { useLiveGame } from "@/lib/use-live-game";
 import {
   abandonGame,
   correctTurn,
@@ -40,8 +42,17 @@ type Editing = { playerId: string; down: number[]; typed: boolean };
  * idempotent, so a retry or two taps racing cannot leave a board nobody chose.
  * The server's reply is the truth and replaces local state once it lands.
  */
-export function GameController({ initial }: { initial: LiveSnapshot }) {
-  const [snapshot, setSnapshot] = useState(initial);
+export function GameController({
+  initial,
+  meId,
+}: {
+  initial: LiveSnapshot;
+  meId: string;
+}) {
+  // Subscribed as well as driving: without this the scorekeeper would never
+  // notice being taken over, and would keep tapping a board the server has
+  // stopped accepting from them.
+  const { snapshot, connection, apply } = useLiveGame(initial.game.id, initial);
   const [localDown, setLocalDown] = useState<number[] | null>(null);
   const [undoStack, setUndoStack] = useState<number[][]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -70,6 +81,11 @@ export function GameController({ initial }: { initial: LiveSnapshot }) {
   const liveScore = scoreOf(rules, openTiles);
   const shut = openTiles.length === 0;
 
+  const demoted = snapshot.game.scorekeeper_player_id !== meId;
+  useEffect(() => {
+    if (demoted) router.refresh();
+  }, [demoted, router]);
+
   function fail(message: string) {
     play("error");
     toast({ kind: "error", title: message });
@@ -93,7 +109,7 @@ export function GameController({ initial }: { initial: LiveSnapshot }) {
       return;
     }
 
-    setSnapshot(res.snapshot);
+    apply(res.snapshot);
     if (queued.current === null) {
       setLocalDown(null);
       return;
@@ -131,7 +147,7 @@ export function GameController({ initial }: { initial: LiveSnapshot }) {
         fail(res.error);
         return;
       }
-      setSnapshot(res.snapshot);
+      apply(res.snapshot);
       setLocalDown(null);
       setUndoStack([]);
       setMode("board");
@@ -187,7 +203,7 @@ export function GameController({ initial }: { initial: LiveSnapshot }) {
         fail(res.error);
         return;
       }
-      setSnapshot(res.snapshot);
+      apply(res.snapshot);
       setEditing(null);
       setLocalDown(null);
     });
@@ -304,8 +320,18 @@ export function GameController({ initial }: { initial: LiveSnapshot }) {
             <span className="text-ink-muted"> is up</span>
           </p>
         </div>
-        <BoardModeToggle mode={mode} onChange={setMode} />
+        <div className="flex items-center gap-3">
+          <ConnectionDot state={connection} />
+          <BoardModeToggle mode={mode} onChange={setMode} />
+        </div>
       </div>
+
+      {connection === "offline" && (
+        <p className="rounded-[var(--radius-card)] border border-danger/50 bg-danger/10 px-4 py-3 text-sm">
+          Offline — showing the last board we could confirm. Taps will not save
+          until the connection is back.
+        </p>
+      )}
 
       {mode === "board" ? (
         <>
@@ -322,7 +348,7 @@ export function GameController({ initial }: { initial: LiveSnapshot }) {
               </Button>
               <Button
                 size="lg"
-                disabled={pending}
+                disabled={pending || connection === "offline"}
                 onClick={() => handleEndTurn()}
               >
                 End turn →

@@ -1,94 +1,149 @@
 import Link from "next/link";
 import type { GameResultRow, Player } from "@/lib/types";
+import { getIdentity } from "@/lib/auth";
 import { dayLabel, stockholmToday } from "@/lib/dates";
+import { parseSnapshot } from "@/lib/live";
 import { supabaseAdmin } from "@/lib/supabase";
 import { buttonClass } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { MiniBoard } from "@/components/board/mini-board";
+import { LiveGameCard } from "@/components/game/live-game-card";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const sb = supabaseAdmin();
   const today = stockholmToday();
+  const me = await getIdentity();
 
-  const { data: games, error: gErr } = await sb
-    .from("games")
-    .select("id")
-    .eq("played_on", today)
-    .order("created_at");
-  if (gErr) throw new Error(gErr.message);
-  const gameIds = (games ?? []).map((g) => g.id as string);
+  // Live and finished are now different things. The v1 page selected every
+  // game for today regardless of status, so once games gained a lifecycle an
+  // in-progress one rendered as an empty card — game_results only contains
+  // games that were played to the end.
+  const [liveRes, finishedRes] = await Promise.all([
+    sb
+      .from("games")
+      .select("id")
+      .eq("status", "in_progress")
+      .is("deleted_at", null)
+      .order("started_at")
+      .limit(1)
+      .maybeSingle(),
+    sb
+      .from("games")
+      .select("id")
+      .eq("played_on", today)
+      .eq("status", "finished")
+      .is("deleted_at", null)
+      .order("created_at"),
+  ]);
+  if (finishedRes.error) throw new Error(finishedRes.error.message);
 
+  const liveId = (liveRes.data as { id: string } | null)?.id ?? null;
+  let liveSnapshot = null;
+  if (liveId) {
+    const { data } = await sb.rpc("live_game_snapshot", { p_game_id: liveId });
+    if (data) liveSnapshot = parseSnapshot(data);
+  }
+
+  const finishedIds = (finishedRes.data ?? []).map((g) => (g as { id: string }).id);
   let rows: GameResultRow[] = [];
   let byId = new Map<string, Player>();
-  if (gameIds.length > 0) {
+  if (finishedIds.length > 0) {
     const { data, error } = await sb
       .from("game_results")
       .select("*")
-      .in("game_id", gameIds)
-      .order("score", { ascending: true });
+      .in("game_id", finishedIds)
+      .order("finish_position", { ascending: true });
     if (error) throw new Error(error.message);
     rows = (data ?? []) as GameResultRow[];
+
     const { data: playerRows } = await sb
       .from("players")
       .select("*")
-      .in("id", rows.map((r) => r.player_id));
+      .in(
+        "id",
+        rows.map((r) => r.player_id),
+      );
     byId = new Map(((playerRows ?? []) as Player[]).map((p) => [p.id, p]));
   }
 
-  if (gameIds.length === 0) {
-    return (
-      <main className="flex flex-col items-center justify-center gap-6 p-10 text-center">
-        <div className="text-7xl">🎲</div>
-        <h1 className="text-3xl font-bold">Shut the Box</h1>
-        <p className="max-w-md opacity-70">{dayLabel(today)}</p>
-        <p className="max-w-md opacity-70">
-          No game yet today. Gather the colleagues — lowest score wins the day.
-        </p>
-        <Link
-          href="/play"
-          className={buttonClass("primary", "lg")}
-        >
-          Start today&apos;s game
-        </Link>
-      </main>
-    );
-  }
+  const nothingToday = !liveSnapshot && finishedIds.length === 0;
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
-      <h1 className="text-2xl font-bold">{dayLabel(today)}</h1>
-      {gameIds.map((gameId, gi) => {
-        const gameRows = rows.filter((r) => r.game_id === gameId);
-        return (
-          <Link
-            key={gameId}
-            href={`/game/${gameId}`}
-            className="flex flex-col gap-2 rounded-2xl border border-black/10 p-4 hover:border-black/30 dark:border-white/10 dark:hover:border-white/30"
-          >
-            <h2 className="text-sm font-semibold uppercase tracking-wide opacity-60">
-              {gameIds.length > 1 ? `Game ${gi + 1}` : "Today's game"}
-            </h2>
-            {gameRows.map((r) => {
-              const p = byId.get(r.player_id);
-              return (
-                <div key={r.player_id} className="flex justify-between">
-                  <span>
-                    {p?.emoji} <span className="font-medium">{p?.name}</span>
-                    {r.is_shut_box && " 📦"}
-                  </span>
-                  <span className="font-bold">
-                    {r.score}
-                    {r.is_winner && " 👑"}
-                  </span>
-                </div>
-              );
-            })}
-          </Link>
-        );
-      })}
-      <Link href="/play" className="text-sm opacity-70 hover:opacity-100">
-        + Start another game
-      </Link>
+    <main className="mx-auto flex max-w-2xl flex-col gap-6 p-4 sm:p-6">
+      <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold">
+        {dayLabel(today)}
+      </h1>
+
+      {liveSnapshot && (
+        <LiveGameCard
+          initial={liveSnapshot}
+          amScorekeeper={
+            me !== null && liveSnapshot.game.scorekeeper_player_id === me.id
+          }
+        />
+      )}
+
+      {nothingToday ? (
+        <EmptyState
+          art="🎲"
+          title="No game yet today."
+          body="Gather the colleagues — lowest score wins the day."
+          cta={
+            <Link href="/play" className={buttonClass("primary", "lg")}>
+              Start today&apos;s game
+            </Link>
+          }
+        />
+      ) : (
+        <>
+          {finishedIds.map((gameId, index) => {
+            const gameRows = rows.filter((r) => r.game_id === gameId);
+            if (gameRows.length === 0) return null;
+            const tiles = 12; // WP-B12's typed client carries the ruleset here
+            return (
+              <Link
+                key={gameId}
+                href={`/game/${gameId}`}
+                className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-line p-4 transition-colors hover:border-brass/60"
+              >
+                <h2 className="eyebrow">
+                  {finishedIds.length > 1 ? `Game ${index + 1}` : "Today's game"}
+                </h2>
+                {gameRows.map((r) => {
+                  const p = byId.get(r.player_id);
+                  return (
+                    <div
+                      key={r.player_id}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span aria-hidden>{p?.emoji}</span>
+                        <span className="font-medium">{p?.name}</span>
+                        <MiniBoard tiles={tiles} open={r.tiles_open} />
+                      </span>
+                      <span className="font-[family-name:var(--font-display)] font-bold tabular-nums">
+                        {r.score === 0 ? "📦 0" : r.score}
+                        {r.is_winner && " 👑"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </Link>
+            );
+          })}
+
+          {!liveSnapshot && (
+            <Link
+              href="/play"
+              className="self-start text-sm font-semibold text-ink-muted hover:text-ink"
+            >
+              + Start another game
+            </Link>
+          )}
+        </>
+      )}
     </main>
   );
 }

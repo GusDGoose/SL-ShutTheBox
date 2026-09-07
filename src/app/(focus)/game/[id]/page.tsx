@@ -77,23 +77,26 @@ export default async function GamePage({
     );
   }
 
-  const isScorekeeper =
-    me !== null && snapshot.game.scorekeeper_player_id === me.id;
+  // Split rather than a ternary so the compiler can see that `me` is real
+  // inside the scorekeeper branch, instead of needing a non-null assertion.
+  if (me && snapshot.game.scorekeeper_player_id === me.id) {
+    return (
+      <main className={shell}>
+        <GameController initial={snapshot} meId={me.id} />
+      </main>
+    );
+  }
 
   return (
     <main className={shell}>
-      {isScorekeeper ? (
-        <GameController initial={snapshot} />
-      ) : (
-        <WatchGame
-          initial={snapshot}
-          scorekeeperName={
-            snapshot.players.find(
-              (p) => p.player_id === snapshot.game.scorekeeper_player_id,
-            )?.name ?? null
-          }
-        />
-      )}
+      <WatchGame
+        initial={snapshot}
+        scorekeeperName={
+          snapshot.players.find(
+            (p) => p.player_id === snapshot.game.scorekeeper_player_id,
+          )?.name ?? null
+        }
+      />
     </main>
   );
 }
