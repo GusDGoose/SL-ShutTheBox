@@ -97,52 +97,53 @@ export function useLiveGame(gameId: string, initial: LiveSnapshot) {
       return () => stopPolling();
     }
 
-    // NOTE (WP-B7): polling here is a fallback only, and it is NOT proven.
-    // Measured behaviour with the Realtime service stopped: supabase-js reports
-    // no status at all — it retries quietly — so this error-triggered fallback
-    // never starts and a board can sit frozen while the indicator still reads
-    // "Catching up". Starting the poll unconditionally instead was tried and
-    // made things worse: a server-action POST every few seconds appears to keep
-    // the channel from ever reaching SUBSCRIBED, so the LIVE path broke too.
-    // Reverted to this, which is the version verified to go live and deliver
-    // broadcasts. Fixing the fallback properly is a D5 follow-up; the honest
-    // summary today is that live updates work and the degraded path does not.
+    // [concept: authorize before joining] setAuth() MUST complete before the
+    // channel joins. A private channel is authorized at join time by the RLS
+    // policy on realtime.messages, so joining first and setting the token
+    // afterwards loses the race — and supabase-js then retries quietly,
+    // reporting no status at all, so nothing notices. That is exactly what made
+    // this work intermittently: a bare `void setAuth()` sometimes resolved
+    // before the join went out and sometimes did not. Isolated by pointing a
+    // plain Node client with the same key at the same topic, which subscribed
+    // first time because it awaited setAuth.
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
-    // A private channel is authorized by the RLS policy on realtime.messages,
-    // which needs the client's token set even for anon.
-    void supabase.realtime.setAuth();
+    void (async () => {
+      await supabase.realtime.setAuth();
+      if (cancelled) return;
 
-    const channel = supabase
-      .channel(`game:${gameId}`, { config: { private: true } })
-      .on("broadcast", { event: "state" }, (message) => {
-        if (cancelled) return;
-        try {
-          apply(parseSnapshot(message.payload));
-        } catch {
-          // A payload we cannot read is not worth tearing the board down for;
-          // the next poll or refetch will put us right.
-        }
-      })
-      .subscribe((status) => {
-        if (cancelled) return;
-        if (status === "SUBSCRIBED") {
-          setConnection("live");
-          stopPolling();   // the channel is carrying updates now
-          // Close the gap between the server render and this subscription: a
-          // tap in that window would otherwise be missed until the next one.
-          void refetch();
-          return;
-        }
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          setConnection("polling");
-          startPolling();
-          return;
-        }
-        if (status === "CLOSED") {
-          setConnection("offline");
-          startPolling();
-        }
-      });
+      channel = supabase
+        .channel(`game:${gameId}`, { config: { private: true } })
+        .on("broadcast", { event: "state" }, (message) => {
+          if (cancelled) return;
+          try {
+            apply(parseSnapshot(message.payload));
+          } catch {
+            // A payload we cannot read is not worth tearing the board down
+            // for; the next refetch will put us right.
+          }
+        })
+        .subscribe((status) => {
+          if (cancelled) return;
+          if (status === "SUBSCRIBED") {
+            setConnection("live");
+            stopPolling();
+            // Close the gap between the server render and this subscription:
+            // a tap in that window would otherwise be missed.
+            void refetch();
+            return;
+          }
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            setConnection("polling");
+            startPolling();
+            return;
+          }
+          if (status === "CLOSED") {
+            setConnection("offline");
+            startPolling();
+          }
+        });
+    })();
 
     // Phones suspend background tabs, so anything missed while away is picked
     // up on return rather than waiting for the next broadcast.
@@ -155,7 +156,9 @@ export function useLiveGame(gameId: string, initial: LiveSnapshot) {
       cancelled = true;
       stopPolling();
       document.removeEventListener("visibilitychange", onVisible);
-      void supabase.removeChannel(channel);
+      // May still be null if the effect is torn down while setAuth is in
+      // flight, which is common in development's double-invoked effects.
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [gameId, apply, refetch]);
 
