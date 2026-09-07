@@ -6,6 +6,8 @@ import { parseSnapshot } from "@/lib/live";
 import { supabaseAdmin } from "@/lib/supabase";
 import { buttonClass } from "@/components/ui/button";
 import { FinishedGame, clipFor } from "@/components/game/finished-game";
+import { AuditTrail } from "@/components/game/audit-trail";
+import { DeletedBanner } from "@/components/game/deleted-banner";
 import { GameController } from "@/components/game/game-controller";
 import { WatchGame } from "@/components/game/watch-game";
 
@@ -36,8 +38,6 @@ export default async function GamePage({
   if (!data) notFound();
 
   const snapshot = parseSnapshot(data);
-  // WP-B8 replaces this with a "deleted" banner and a Restore button.
-  if (snapshot.game.deleted) notFound();
 
   const me = await getIdentity();
   const shell = "mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-6";
@@ -45,11 +45,25 @@ export default async function GamePage({
   if (snapshot.game.status === "finished") {
     return (
       <main className={shell}>
+        {snapshot.game.deleted && (
+          <DeletedBanner
+            gameId={snapshot.game.id}
+            knowsWho={me !== null}
+          />
+        )}
         <FinishedGame
           gameId={snapshot.game.id}
           rules={snapshot.game.rules}
-          celebrate={crown === "1"}
+          // A deleted game is being examined, not celebrated.
+          celebrate={crown === "1" && !snapshot.game.deleted}
         />
+        <Link
+          href={`/game/${snapshot.game.id}/edit`}
+          className={`${buttonClass("secondary")} self-start`}
+        >
+          Fix the record
+        </Link>
+        <AuditTrail gameId={snapshot.game.id} />
       </main>
     );
   }
