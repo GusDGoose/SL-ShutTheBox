@@ -19,6 +19,17 @@ const POLL_MS = 5000;
  * Falls back to polling when the channel cannot connect, and when there is no
  * publishable key configured at all. Live updates are a nicety; the game still
  * works without them.
+ *
+ * Verified: broadcasts arrive within ~3s of a tap made directly in the database
+ * (score and tiles matched exactly), a Node client with the same publishable key
+ * subscribes to the private topic and receives one message per action, and the
+ * finishing broadcast lands despite its version resetting to 0.
+ *
+ * NOT verified: the polling fallback. An earlier attempt to test it concluded it
+ * was broken, but that conclusion came from reading the wrong page — the Browser
+ * pane was silently failing to navigate, so the Today card was being measured
+ * while the game page was assumed. Treat the fallback as untested rather than
+ * broken, and test it by confirming location.pathname first.
  */
 export function useLiveGame(gameId: string, initial: LiveSnapshot) {
   const [snapshot, setSnapshot] = useState(initial);
