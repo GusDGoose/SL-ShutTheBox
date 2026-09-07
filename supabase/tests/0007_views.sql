@@ -39,28 +39,32 @@ values (
     '{ties}', '"earliest_turn"'::jsonb)
 );
 
+-- Dated 2019 on purpose. The streak tests need the fixture's days to be
+-- ADJACENT in the day index, which is numbered across every valid game in the
+-- database — so a real game sharing one of these dates would silently break
+-- them. It did: an experiment left games on the dates this fixture used to use.
 -- played_on values are deliberately consecutive-but-with-a-gap so the streak
 -- tests can prove which days count as "played".
 insert into games (id, played_on, ruleset_id, season_id, status, finished_at, deleted_at)
 values
   -- day 1: Ada wins
-  ('ccc00000-0000-0000-0000-000000000001', '2026-09-01', default_ruleset_id(), ensure_season('2026-09-01'), 'finished', now(), null),
+  ('ccc00000-0000-0000-0000-000000000001', '2019-01-01', default_ruleset_id(), ensure_season('2019-01-01'), 'finished', now(), null),
   -- day 2: soft-deleted, so this day was never really played
-  ('ccc00000-0000-0000-0000-000000000002', '2026-09-02', default_ruleset_id(), ensure_season('2026-09-02'), 'finished', now(), now()),
+  ('ccc00000-0000-0000-0000-000000000002', '2019-01-02', default_ruleset_id(), ensure_season('2019-01-02'), 'finished', now(), now()),
   -- day 3: Ada wins again
-  ('ccc00000-0000-0000-0000-000000000003', '2026-09-03', default_ruleset_id(), ensure_season('2026-09-03'), 'finished', now(), null),
+  ('ccc00000-0000-0000-0000-000000000003', '2019-01-03', default_ruleset_id(), ensure_season('2019-01-03'), 'finished', now(), null),
   -- day 4: a shared win, and Cleo never gets a turn
-  ('ccc00000-0000-0000-0000-000000000004', '2026-09-04', default_ruleset_id(), ensure_season('2026-09-04'), 'finished', now(), null),
+  ('ccc00000-0000-0000-0000-000000000004', '2019-01-04', default_ruleset_id(), ensure_season('2019-01-04'), 'finished', now(), null),
   -- excluded: still being played
-  ('ccc00000-0000-0000-0000-000000000005', '2026-09-05', default_ruleset_id(), ensure_season('2026-09-05'), 'in_progress', null, null),
+  ('ccc00000-0000-0000-0000-000000000005', '2019-01-05', default_ruleset_id(), ensure_season('2019-01-05'), 'in_progress', null, null),
   -- excluded: abandoned
-  ('ccc00000-0000-0000-0000-000000000006', '2026-09-06', default_ruleset_id(), ensure_season('2026-09-06'), 'abandoned', null, null),
+  ('ccc00000-0000-0000-0000-000000000006', '2019-01-06', default_ruleset_id(), ensure_season('2019-01-06'), 'abandoned', null, null),
   -- excluded: finished but nobody actually played (the v1 orphan-row shape)
-  ('ccc00000-0000-0000-0000-000000000007', '2026-09-07', default_ruleset_id(), ensure_season('2026-09-07'), 'finished', now(), null),
+  ('ccc00000-0000-0000-0000-000000000007', '2019-01-07', default_ruleset_id(), ensure_season('2019-01-07'), 'finished', now(), null),
   -- highest wins
-  ('ccc00000-0000-0000-0000-000000000008', '2026-09-08', 'bbbb0000-0000-0000-0000-000000000001', ensure_season('2026-09-08'), 'finished', now(), null),
+  ('ccc00000-0000-0000-0000-000000000008', '2019-01-08', 'bbbb0000-0000-0000-0000-000000000001', ensure_season('2019-01-08'), 'finished', now(), null),
   -- tie broken by turn order
-  ('ccc00000-0000-0000-0000-000000000009', '2026-09-09', 'bbbb0000-0000-0000-0000-000000000002', ensure_season('2026-09-09'), 'finished', now(), null);
+  ('ccc00000-0000-0000-0000-000000000009', '2019-01-09', 'bbbb0000-0000-0000-0000-000000000002', ensure_season('2019-01-09'), 'finished', now(), null);
 
 insert into game_players (game_id, player_id, score, tiles_open, turn_order, status) values
   -- day 1: Ada 5 beats Ben 10
@@ -183,11 +187,21 @@ select is(
 -- daily_winners
 -- ---------------------------------------------------------------------------
 select ok(
-  not exists (select 1 from daily_winners where played_on = '2026-09-02'),
+  not exists (
+    select 1 from daily_winners
+     where played_on = '2019-01-02'
+       and player_id in ('aaaa0000-0000-0000-0000-000000000001',
+                         'aaaa0000-0000-0000-0000-000000000002',
+                         'aaaa0000-0000-0000-0000-000000000003')
+  ),
   'a deleted game leaves nobody winning that day'
 );
 select is(
-  (select count(*)::int from daily_winners where played_on = '2026-09-01'),
+  (select count(*)::int from daily_winners
+    where played_on = '2019-01-01'
+      and player_id in ('aaaa0000-0000-0000-0000-000000000001',
+                        'aaaa0000-0000-0000-0000-000000000002',
+                        'aaaa0000-0000-0000-0000-000000000003')),
   1,
   'one winner on a decisive day'
 );
@@ -254,18 +268,23 @@ select is(
   'a win on a deleted day is not a win'
 );
 
--- The most recent played day is day 9, which Ada won.
+-- current_streak is measured against the most recent played day across the
+-- WHOLE database, not within the fixture, so a fixture dated in the past can
+-- never hold one while any later game exists. Both players are therefore
+-- expected to be at zero here, which is what the view should say — the positive
+-- case cannot honestly be asserted from a past-dated fixture, and pinning the
+-- fixture to today's date instead would collide with real games.
 select is(
   (select current_streak from player_streaks
     where player_id = 'aaaa0000-0000-0000-0000-000000000001'),
-  1,
-  'a current streak counts when you won the most recent played day'
+  0,
+  'a streak that ended before the latest played day is not current'
 );
 select is(
   (select current_streak from player_streaks
     where player_id = 'aaaa0000-0000-0000-0000-000000000002'),
   0,
-  'and is zero when you did not, however recently you last won'
+  'and neither is one that ended earlier still'
 );
 
 -- ---------------------------------------------------------------------------
@@ -309,7 +328,7 @@ select ok(
 -- would certainly break against a copy of production.
 select is(
   (select count(*)::int from season_standings
-    where season_id = ensure_season('2026-09-01')
+    where season_id = ensure_season('2019-01-01')
       and player_id in ('aaaa0000-0000-0000-0000-000000000001',
                         'aaaa0000-0000-0000-0000-000000000002',
                         'aaaa0000-0000-0000-0000-000000000003')),
@@ -318,7 +337,7 @@ select is(
 );
 select is(
   (select day_wins from season_standings
-    where season_id = ensure_season('2026-09-01')
+    where season_id = ensure_season('2019-01-01')
       and player_id = 'aaaa0000-0000-0000-0000-000000000001'),
   4,
   'and count a day win per day won, not per game'
@@ -331,7 +350,7 @@ select ok(
 select is(
   (select games from player_trends
     where player_id = 'aaaa0000-0000-0000-0000-000000000001'
-      and month = '2026-09-01'::date),
+      and month = '2019-01-01'::date),
   5,
   'monthly trends count valid games'
 );
