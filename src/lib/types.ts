@@ -7,8 +7,37 @@ export type Player = {
   name: string;
   emoji: string;
   song_url: string | null;
+  // The clip settings from 0006: which slice of the song to play, how long to
+  // fade at each edge, and whether it repeats.
+  song_start_seconds: number;
+  song_end_seconds: number | null;
+  song_fade_ms: number;
+  song_loop: boolean;
+  song_clip_path: string | null;
   is_active: boolean;
   created_at: string;
+};
+
+// View: player_ratings
+export type PlayerRatingRow = {
+  player_id: string;
+  name: string;
+  emoji: string;
+  is_active: boolean;
+  rating: number;
+  rated_games: number;
+  peak_rating: number;
+  below_peak: number;
+  is_established: boolean;
+};
+
+export type AchievementRow = {
+  key: string;
+  name: string;
+  description: string;
+  emoji: string;
+  sort: number;
+  repeatable: boolean;
 };
 
 export type Game = {

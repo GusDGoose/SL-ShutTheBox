@@ -11,6 +11,7 @@ import {
 import { ScoreKeypad } from "@/components/board/score-keypad";
 import { ScoreReadout } from "@/components/board/score-readout";
 import { ConnectionDot } from "@/components/game/connection-dot";
+import { WalkUpPlayer } from "@/components/game/walk-up-player";
 import { ResultsList } from "@/components/game/results-list";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -23,6 +24,7 @@ import {
   type LiveSnapshot,
 } from "@/lib/live";
 import { boardTiles, instantWinOf, maxScoreOf, scoreOf } from "@/lib/rules";
+import type { Clip } from "@/lib/audio/youtube-api";
 import { useLiveGame } from "@/lib/use-live-game";
 import {
   abandonGame,
@@ -45,9 +47,12 @@ type Editing = { playerId: string; down: number[]; typed: boolean };
 export function GameController({
   initial,
   meId,
+  walkUps = {},
 }: {
   initial: LiveSnapshot;
   meId: string;
+  /** Each player's song clip, for the few seconds that open their turn. */
+  walkUps?: Record<string, Clip | null>;
 }) {
   // Subscribed as well as driving: without this the scorekeeper would never
   // notice being taken over, and would keep tapping a board the server has
@@ -60,7 +65,7 @@ export function GameController({
   const [confirming, setConfirming] = useState<"abandon" | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  const { play } = useSfx();
+  const { play, muted } = useSfx();
   const toast = useToast();
 
   // One request at a time, with only the latest desired board queued behind it.
@@ -319,6 +324,14 @@ export function GameController({
             <span className="font-bold">{player?.name}</span>
             <span className="text-ink-muted"> is up</span>
           </p>
+          {player && walkUps[player.player_id] && (
+            <WalkUpPlayer
+              key={`${player.player_id}-${progress.index}`}
+              clip={walkUps[player.player_id]!}
+              playerName={player.name}
+              muted={muted}
+            />
+          )}
         </div>
         <div className="flex items-center gap-3">
           <ConnectionDot state={connection} />

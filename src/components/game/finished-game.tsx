@@ -4,9 +4,36 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { extractVideoId } from "@/lib/youtube";
 import { buttonClass } from "@/components/ui/button";
 import { MiniBoard } from "@/components/board/mini-board";
-import { Celebration, type CelebrationWinner } from "@/components/celebration";
-import type { GameResultRow, Player, PlayerStreakRow } from "@/lib/types";
+import {
+  Celebration,
+  type CelebrationWinner,
+  type EarnedBadge,
+} from "@/components/celebration";
+import type { Clip } from "@/lib/audio/youtube-api";
+import type {
+  AchievementRow,
+  GameResultRow,
+  Player,
+  PlayerStreakRow,
+} from "@/lib/types";
 import { tilesOf, type Ruleset } from "@/lib/rules";
+
+/**
+ * The slice of a player's song to play, or null if they have not set one that
+ * can be parsed. The settings come from the clip columns added in 0006.
+ */
+export function clipFor(player: Player | undefined): Clip | null {
+  if (!player?.song_url) return null;
+  const videoId = extractVideoId(player.song_url);
+  if (!videoId) return null;
+  return {
+    videoId,
+    startSeconds: player.song_start_seconds ?? 0,
+    endSeconds: player.song_end_seconds,
+    fadeMs: player.song_fade_ms ?? 1500,
+    loop: player.song_loop ?? false,
+  };
+}
 
 /**
  * A game that has been played out.
@@ -62,13 +89,49 @@ export async function FinishedGame({
     (streaksRes.data as PlayerStreakRow[]).map((s) => [s.player_id, s]),
   );
 
+  // Badges earned in THIS game, so the celebration can announce them. Read
+  // back from the table rather than passed through the action, so reopening a
+  // game shows the same list.
+  const [earnedRes, catalogRes] = await Promise.all([
+    sb
+      .from("player_achievements")
+      .select("player_id, achievement_key")
+      .eq("game_id", gameId),
+    sb.from("achievements").select("*"),
+  ]);
+
+  const catalog = new Map(
+    ((catalogRes.data ?? []) as AchievementRow[]).map((a) => [a.key, a]),
+  );
+  const badges: EarnedBadge[] = (
+    (earnedRes.data ?? []) as { player_id: string; achievement_key: string }[]
+  ).flatMap((row) => {
+    const meta = catalog.get(row.achievement_key);
+    return meta
+      ? [
+          {
+            player_id: row.player_id,
+            key: row.achievement_key,
+            name: meta.name,
+            emoji: meta.emoji,
+            description: meta.description,
+          },
+        ]
+      : [];
+  });
+
+  const playerNames = Object.fromEntries(
+    [...byId.values()].map((p) => [p.id, p.name]),
+  );
+
   const winners: CelebrationWinner[] = winnerIds.map((id) => {
     const p = byId.get(id);
     return {
+      playerId: id,
       name: p?.name ?? "?",
       emoji: p?.emoji ?? "🎲",
       streak: streakById.get(id)?.current_streak ?? 0,
-      videoId: p?.song_url ? extractVideoId(p.song_url) : null,
+      clip: clipFor(p),
       songUrl: p?.song_url ?? null,
     };
   });
@@ -82,7 +145,12 @@ export async function FinishedGame({
       </h1>
 
       {celebrate ? (
-        <Celebration winners={winners} shutBox={shutBox} />
+        <Celebration
+          winners={winners}
+          shutBox={shutBox}
+          badges={badges}
+          playerNames={playerNames}
+        />
       ) : (
         <p className="rounded-[var(--radius-card)] border border-brass bg-brass/10 px-4 py-3">
           🏆{" "}

@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getIdentity } from "@/lib/auth";
+import type { Player } from "@/lib/types";
 import { parseSnapshot } from "@/lib/live";
 import { supabaseAdmin } from "@/lib/supabase";
 import { buttonClass } from "@/components/ui/button";
-import { FinishedGame } from "@/components/game/finished-game";
+import { FinishedGame, clipFor } from "@/components/game/finished-game";
 import { GameController } from "@/components/game/game-controller";
 import { WatchGame } from "@/components/game/watch-game";
 
@@ -80,9 +81,22 @@ export default async function GamePage({
   // Split rather than a ternary so the compiler can see that `me` is real
   // inside the scorekeeper branch, instead of needing a non-null assertion.
   if (me && snapshot.game.scorekeeper_player_id === me.id) {
+    // Walk-up clips for everyone at the table, so a turn can open with a few
+    // seconds of that player's own song.
+    const { data: roster } = await supabaseAdmin()
+      .from("players")
+      .select("*")
+      .in(
+        "id",
+        snapshot.players.map((p) => p.player_id),
+      );
+    const walkUps = Object.fromEntries(
+      ((roster ?? []) as Player[]).map((p) => [p.id, clipFor(p)]),
+    );
+
     return (
       <main className={shell}>
-        <GameController initial={snapshot} meId={me.id} />
+        <GameController initial={snapshot} meId={me.id} walkUps={walkUps} />
       </main>
     );
   }
