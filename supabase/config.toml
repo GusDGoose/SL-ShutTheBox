@@ -117,12 +117,17 @@ enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
-# Uncomment to configure local storage buckets
-# [storage.buckets.images]
-# public = false
-# file_size_limit = "50MiB"
-# allowed_mime_types = ["image/png", "image/jpeg"]
-# objects_path = "./images"
+# The two buckets, mirroring supabase/migrations/0015_storage.sql. Both are
+# private: everything reaches a browser as a signed URL from the server.
+[storage.buckets.game-photos]
+public = false
+file_size_limit = "1536KiB"
+allowed_mime_types = ["image/jpeg", "image/webp", "image/png"]
+
+[storage.buckets.song-clips]
+public = false
+file_size_limit = "4MiB"
+allowed_mime_types = ["audio/mpeg", "audio/mp4", "audio/ogg"]
 
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]

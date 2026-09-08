@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireSession, SessionError } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-errors";
+import { checkUpload, photoObjectPath } from "@/lib/storage-paths";
 import { supabaseAdmin } from "@/lib/supabase";
 import type { ActionResult } from "@/app/(focus)/game/actions";
 
@@ -163,5 +164,89 @@ export async function addManualGame(
     const gameId = data as string;
     touched(gameId);
     return { ok: true, gameId };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// The photo of the day
+// ---------------------------------------------------------------------------
+
+/**
+ * Pins a photo to a game. The browser has already resized it to about a
+ * megabyte; `checkUpload` is the backstop. Uploads to Storage first and only
+ * then records the path, so a failed upload leaves the row untouched.
+ */
+export async function uploadGamePhoto(
+  gameId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  return withSession(async (actorId) => {
+    const file = formData.get("photo");
+    if (!(file instanceof File)) {
+      return { ok: false, error: "No photo was attached." };
+    }
+    const problem = checkUpload("photo", file);
+    if (problem) return { ok: false, error: problem };
+
+    const sb = supabaseAdmin();
+    const { data, error: gameError } = await sb
+      .from("games")
+      .select("played_on, photo_path")
+      .eq("id", gameId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (gameError) return { ok: false, error: gameError.message };
+    const game = data as { played_on: string; photo_path: string | null } | null;
+    if (!game) return { ok: false, error: "That game is not around any more." };
+
+    const path = photoObjectPath(game.played_on, gameId, file.type);
+    const { error: uploadError } = await sb.storage
+      .from("game-photos")
+      .upload(path, Buffer.from(await file.arrayBuffer()), {
+        upsert: true,
+        contentType: file.type,
+        cacheControl: "3600",
+      });
+    if (uploadError) return { ok: false, error: uploadError.message };
+
+    // A re-take in a different format would otherwise leave the old object
+    // behind in the bucket, orphaned.
+    if (game.photo_path && game.photo_path !== path) {
+      await sb.storage.from("game-photos").remove([game.photo_path]);
+    }
+
+    const { error } = await sb.rpc("set_game_photo", {
+      p_actor: actorId,
+      p_game_id: gameId,
+      p_path: path,
+    });
+    if (error) return { ok: false, error: describeDbError(error) };
+    touched(gameId);
+    return { ok: true };
+  });
+}
+
+/** Takes the photo down. The row is cleared first, then the object — a row
+ *  pointing at a missing object is the worse of the two failure states. */
+export async function clearGamePhoto(gameId: string): Promise<ActionResult> {
+  return withSession(async (actorId) => {
+    const sb = supabaseAdmin();
+    const { data } = await sb
+      .from("games")
+      .select("photo_path")
+      .eq("id", gameId)
+      .maybeSingle();
+    const path = (data as { photo_path: string | null } | null)?.photo_path;
+    if (!path) return { ok: true };
+
+    const { error } = await sb.rpc("set_game_photo", {
+      p_actor: actorId,
+      p_game_id: gameId,
+      p_path: null,
+    });
+    if (error) return { ok: false, error: describeDbError(error) };
+    await sb.storage.from("game-photos").remove([path]);
+    touched(gameId);
+    return { ok: true };
   });
 }
