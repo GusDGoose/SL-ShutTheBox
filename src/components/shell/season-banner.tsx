@@ -48,7 +48,11 @@ export function SeasonBanner({
       <span className="font-[family-name:var(--font-display)] text-lg font-bold">
         Season {season.number}
       </span>
-      <span className="font-semibold text-brass-ink">{season.name}</span>
+      {/* A season nobody has named is called "Season N" already, so printing
+          both reads "Season 2  Season 2". */}
+      {season.name !== `Season ${season.number}` && (
+        <span className="font-semibold text-brass-ink">{season.name}</span>
+      )}
       <span className="text-sm text-ink-muted">
         {tilesOf(rules)} tiles ·{" "}
         {rules.win === "lowest" ? "lowest wins" : "highest wins"} · ends {ends}

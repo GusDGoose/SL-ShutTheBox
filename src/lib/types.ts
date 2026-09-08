@@ -70,18 +70,25 @@ export type PlayerStatsRow = {
   player_id: string;
   name: string;
   emoji: string;
+  is_active: boolean;
   games_played: number;
   wins: number;
   win_pct: number | null;
   avg_score: number | null;
   best_score: number | null;
+  worst_score: number | null;
+  avg_finish: number | null;
   shut_boxes: number;
+  last_played_on: string | null;
+  // Present but never got a turn because someone shut the box.
+  dnp_count: number;
 };
 
 // View: player_streaks
 export type PlayerStreakRow = {
   player_id: string;
   name: string;
+  emoji: string;
   best_streak: number;
   current_streak: number;
 };
