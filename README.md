@@ -76,6 +76,102 @@ and functions; needs the local stack running), `npm run e2e` (Playwright).
    Card with winner, score, and streak after every saved game. If the webhook
    fails or is unset, games still save fine.
 
+## Cutting over to v2
+
+Migrations `0003`–`0014` turn the v1 schema into the v2 one. They rewrite every
+stats view, so the app and the schema have to move together: a v1 deployment
+against the v2 schema writes `games` rows that land as `in_progress` and are
+invisible to every view. Budget one sitting, after a game day is over.
+
+**Rehearse it first.** Every pgTAP test runs on a database built from scratch,
+so the backfills in `0004`–`0014` are only ever exercised against zero rows.
+`scripts/cutover/` runs them against a v1-shaped dataset instead — including an
+orphan `games` row and a legacy 9-tile game, the two things production can
+actually contain:
+
+```bash
+npx supabase db reset --version 0002 --no-seed
+docker exec -i supabase_db_shut-the-box psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q < scripts/cutover/v1_fixture.sql
+docker exec -i supabase_db_shut-the-box psql -U postgres -d postgres -At < scripts/cutover/snapshot.sql > before.txt
+npx supabase migration repair --status applied 0003 --db-url "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+npx supabase migration up --local
+docker exec -i supabase_db_shut-the-box psql -U postgres -d postgres -At < scripts/cutover/snapshot.sql > after.txt
+diff before.txt after.txt
+```
+
+The only line that may differ is a **longer** streak: v1 numbered its streak
+days from the `games` table, so an orphan row put a day nobody won into the
+index and cut everybody's run short. `games_valid` counts days that were
+actually played. Anything else in that diff is a regression — stop and read it.
+
+### The office network blocks Postgres
+
+`supabase db push` connects on 5432/6543, and both are firewalled here — as is
+the direct database host. Only 443 gets out, which is why `supabase login`,
+`link` and `projects list` all work while anything touching the database times
+out. Check before you plan an evening around it:
+
+```bash
+pwsh -c "Test-NetConnection aws-1-eu-west-1.pooler.supabase.com -Port 5432 -InformationLevel Quiet"
+```
+
+`False` means you have two choices:
+
+- **Tether to a phone** and follow the CLI steps below. Preferred: `db push` is
+  the source of truth, and it is the only route that can also take a backup.
+- **Use the dashboard SQL editor** (HTTPS, so it works from the office) with
+  `scripts/cutover/cutover_A_consolidated.sql` — every pending migration plus
+  the migration-history rows, in one transaction. Regenerate it with
+  `bash scripts/cutover/build-consolidated.sh` after adding a migration.
+  It applies all-or-nothing, and re-running it after a success fails on the
+  first statement without changing anything. This route cannot take a backup,
+  so export anything you would not want to lose first — `games.max_tile` is
+  dropped by 0004 and does not come back.
+
+**Then production:**
+
+1. **Back up.** `npx supabase db dump --linked -f backup.sql` (schema and data).
+   This is the rollback, so check it is non-empty before continuing. On the free
+   tier there are no automatic backups, so this is the only one you get — and it
+   needs a network where Postgres is reachable (see above).
+2. **Link and repair.**
+   ```bash
+   npx supabase link --project-ref <your-project-ref>
+   npx supabase migration repair --status applied 0001 0002 0003
+   ```
+   `0001`/`0002` were applied by hand and `0003` must be *recorded* rather than
+   run: it adds `check (max_tile = 12)`, and v1's column default was **9**, so
+   any game saved without an explicit tile count violates it. `0004` drops the
+   column outright, so the end state is identical either way. Recording it is
+   the safe path; if you would rather know, this says whether prod has any:
+   ```sql
+   select count(*) from games where max_tile <> 12;
+   ```
+   Forgetting the repair is not dangerous — the CLI runs each migration in a
+   transaction, so `db push` fails with nothing applied and you can repair and
+   re-run.
+3. **Push.** `npm run db:push`, then `npm run db:diff`.
+
+   The diff does **not** come back empty, and that is expected: Supabase adds
+   its own `public.rls_auto_enable()` function and an `ensure_rls` event
+   trigger that turns RLS on for any new table in `public`. It is a platform
+   safety net, not drift from these migrations — and a useful one, since it is
+   the same hole 0011 closes by hand. Anything else in that diff is real drift.
+4. **Set the new env vars in Vercel *before* deploying** (Production and
+   Preview): `SESSION_SECRET`, `CRON_SECRET`, `NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Generate the two secrets with
+   `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+   The app fails closed without `SESSION_SECRET`: nobody gets past `/pin`.
+5. **Deploy.**
+6. **Everyone re-enters the PIN once** and picks who they are — the cookie
+   format changed, and identity is new.
+7. **Smoke it**: `/api/health` all green, `/` shows the history, `/stats`
+   matches the numbers you screenshotted beforehand (bar the streak correction
+   above), and the first real game posts a Teams card.
+
+Rollback: redeploy the previous Vercel deployment and restore `backup.sql` into
+a fresh project.
+
 ## Changing the schema
 
 1. Write a new numbered file in `supabase/migrations/` (never edit an applied one).
