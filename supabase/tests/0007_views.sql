@@ -1,7 +1,7 @@
 -- pgTAP: game lifecycle, invariants and the rebuilt stats views (0005-0007).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(36);
+select plan(37);
 
 -- ---------------------------------------------------------------------------
 -- Fixture
@@ -13,7 +13,10 @@ select plan(36);
 insert into players (id, name, emoji) values
   ('aaaa0000-0000-0000-0000-000000000001', 'Fixture Ada',  '🦊'),
   ('aaaa0000-0000-0000-0000-000000000002', 'Fixture Ben',  '🐙'),
-  ('aaaa0000-0000-0000-0000-000000000003', 'Fixture Cleo', '🦄');
+  ('aaaa0000-0000-0000-0000-000000000003', 'Fixture Cleo', '🦄'),
+  -- Exists only to win the fixture's last day, so the current_streak tests
+  -- below hold whether or not the database has later games in it.
+  ('aaaa0000-0000-0000-0000-000000000004', 'Fixture Dev',  '🐝');
 
 -- A highest-wins ruleset, to prove the views are not hard-coded to "lowest".
 insert into rulesets (id, slug, name, is_active, rules)
@@ -64,7 +67,11 @@ values
   -- highest wins
   ('ccc00000-0000-0000-0000-000000000008', '2019-01-08', 'bbbb0000-0000-0000-0000-000000000001', ensure_season('2019-01-08'), 'finished', now(), null),
   -- tie broken by turn order
-  ('ccc00000-0000-0000-0000-000000000009', '2019-01-09', 'bbbb0000-0000-0000-0000-000000000002', ensure_season('2019-01-09'), 'finished', now(), null);
+  ('ccc00000-0000-0000-0000-000000000009', '2019-01-09', 'bbbb0000-0000-0000-0000-000000000002', ensure_season('2019-01-09'), 'finished', now(), null),
+  -- The fixture's last day, won by a player nothing else asserts on. Without
+  -- it Ada wins the newest day in the whole database on a freshly reset one,
+  -- and "her streak is not current" becomes false.
+  ('ccc00000-0000-0000-0000-000000000010', '2019-01-10', default_ruleset_id(), ensure_season('2019-01-10'), 'finished', now(), null);
 
 insert into game_players (game_id, player_id, score, tiles_open, turn_order, status) values
   -- day 1: Ada 5 beats Ben 10
@@ -84,7 +91,9 @@ insert into game_players (game_id, player_id, score, tiles_open, turn_order, sta
   ('ccc00000-0000-0000-0000-000000000008', 'aaaa0000-0000-0000-0000-000000000002', 30, '{12,7,11}', 2, 'done'),
   -- earliest_turn tie: both on 6, Ada played first
   ('ccc00000-0000-0000-0000-000000000009', 'aaaa0000-0000-0000-0000-000000000001',  6, '{6}',    1, 'done'),
-  ('ccc00000-0000-0000-0000-000000000009', 'aaaa0000-0000-0000-0000-000000000002',  6, '{6}',    2, 'done');
+  ('ccc00000-0000-0000-0000-000000000009', 'aaaa0000-0000-0000-0000-000000000002',  6, '{6}',    2, 'done'),
+  -- day 10: Dev on his own, so he owns the fixture's most recent played day
+  ('ccc00000-0000-0000-0000-000000000010', 'aaaa0000-0000-0000-0000-000000000004',  2, '{2}',    1, 'done');
 
 -- Cleo was at the table on day 4 but the box was shut before her turn.
 insert into game_players (game_id, player_id, turn_order, status)
@@ -269,11 +278,12 @@ select is(
 );
 
 -- current_streak is measured against the most recent played day across the
--- WHOLE database, not within the fixture, so a fixture dated in the past can
--- never hold one while any later game exists. Both players are therefore
--- expected to be at zero here, which is what the view should say — the positive
--- case cannot honestly be asserted from a past-dated fixture, and pinning the
--- fixture to today's date instead would collide with real games.
+-- WHOLE database, not within the fixture. An earlier version of these two
+-- tests leaned on that: they only passed while some later game happened to
+-- exist, and a freshly reset database — which is what CI has — made Ada the
+-- winner of the newest day and the assertions false. Day 10 above fixes it by
+-- construction: Dev owns the fixture's last day, so neither Ada nor Ben can
+-- hold a current streak no matter what else is in the database.
 select is(
   (select current_streak from player_streaks
     where player_id = 'aaaa0000-0000-0000-0000-000000000001'),
@@ -285,6 +295,17 @@ select is(
     where player_id = 'aaaa0000-0000-0000-0000-000000000002'),
   0,
   'and neither is one that ended earlier still'
+);
+-- The positive case, phrased so it cannot depend on which games exist:
+-- whoever won the newest played day is by definition still on a streak.
+select ok(
+  coalesce((
+    select bool_and(st.current_streak >= 1)
+      from daily_winners dw
+      join player_streaks st on st.player_id = dw.player_id
+     where dw.played_on = (select max(played_on) from games_valid)
+  ), false),
+  'whoever won the most recent played day is on a current streak'
 );
 
 -- ---------------------------------------------------------------------------
