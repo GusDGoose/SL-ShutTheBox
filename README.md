@@ -72,9 +72,18 @@ and functions; needs the local stack running), `npm run e2e` (Playwright).
    Env var changes require a redeploy to take effect.
 3. **Teams announcement** (optional): in the Teams channel → ⋯ → Workflows →
    "Post to a channel when a webhook request is received" → copy the
-   `…logic.azure.com…` URL into `TEAMS_WEBHOOK_URL`. The app posts an Adaptive
-   Card with winner, score, and streak after every saved game. If the webhook
-   fails or is unset, games still save fine.
+   `…logic.azure.com…` URL. Then run `bash scripts/cutover/set-teams-webhook.sh`,
+   which posts a test card first and refuses to save a URL that did not work.
+   **Production only** — preview deployments share the same Supabase project, so
+   giving them the webhook would let a test deploy post real cards into the
+   channel. The app posts an Adaptive Card with winner, score and streak after
+   every crowned game; if the webhook fails or is unset, games still save fine.
+
+   Two things about the flow itself in a closed tenant: it runs as **whoever
+   created it**, so add a co-owner in Power Automate or it dies with that
+   person's account, and the URL is a bearer credential — anyone holding it can
+   post to the channel, so treat it like a password and rotate it by recreating
+   the flow.
 
 ## Cutting over to v2
 
