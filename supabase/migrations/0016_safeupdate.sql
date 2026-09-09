@@ -1,0 +1,291 @@
+-- Shut the Box — every DELETE in a settler gets a WHERE clause.
+--
+-- Found 2026-09-09, the morning after Cutover A: crowning a game failed from
+-- the app with `21000 DELETE requires a WHERE clause`, while the very same
+-- finish_game() succeeded in psql, in the dashboard SQL editor and in every
+-- pgTAP test. The API connection is the difference. Supabase gives the
+-- `authenticator` role `session_preload_libraries = supautils, safeupdate`,
+-- and safeupdate refuses any DELETE or UPDATE that has no WHERE clause — a
+-- guard against the classic "forgot the WHERE" accident. pgTAP runs as
+-- postgres, which is not even allowed to LOAD the library, so 226 green tests
+-- could not see it.
+--
+-- recompute_ratings() and evaluate_achievements() both rebuild their table
+-- from scratch and opened with a bare DELETE. finish_game, edit_game,
+-- delete_game, restore_game, undo_game_change and add_manual_game all call
+-- them, so every write path that resettles was broken from the app between
+-- Cutover A and this migration. The bodies below are the 0008 and 0009
+-- originals with exactly one change each: `where true`, which safeupdate
+-- accepts and which means the same thing. supabase/tests/0016_safeupdate.sql
+-- scans every function in `public` so a bare DELETE or UPDATE cannot come
+-- back.
+--
+-- CREATE OR REPLACE keeps each function's owner and grants, so the revoke/
+-- grant statements from 0008 and 0009 still hold.
+
+create or replace function recompute_ratings()
+returns void language plpgsql volatile as $fn$
+declare
+  v_start   constant numeric := 1000;
+  v_k_new   constant integer := 64;   -- while a player is still being placed
+  v_k_settled constant integer := 32;
+  v_provisional constant integer := 10;
+
+  v_state   jsonb := '{}'::jsonb;     -- player_id -> { r: rating, n: games }
+  v_game    record;
+  v_seq     integer := 0;
+  v_players uuid[];
+  v_places  integer[];
+  v_m       integer;
+  i         integer;
+  j         integer;
+  v_id      uuid;
+  v_r_i     numeric;
+  v_r_j     numeric;
+  v_n_i     integer;
+  v_k       integer;
+  v_score   numeric;
+  v_expected numeric;
+  v_sum     numeric;
+  v_delta   numeric;
+begin
+  delete from rating_events where true;  -- safeupdate: see the header
+
+  for v_game in
+    select g.id, g.played_on
+      from games_valid g
+     order by g.played_on, g.finished_at, g.id
+  loop
+    -- finish_position already accounts for the ruleset's win direction and tie
+    -- policy, so the rating never needs to know which way round the game runs.
+    select array_agg(gr.player_id order by gr.player_id),
+           array_agg(gr.finish_position order by gr.player_id)
+      into v_players, v_places
+      from game_results gr
+     where gr.game_id = v_game.id;
+
+    v_m := coalesce(array_length(v_players, 1), 0);
+    -- A solo game has nobody to be better than.
+    if v_m < 2 then
+      continue;
+    end if;
+
+    v_seq := v_seq + 1;
+
+    -- Seed anyone new at the starting rating.
+    for i in 1 .. v_m loop
+      v_id := v_players[i];
+      if not v_state ? v_id::text then
+        v_state := jsonb_set(
+          v_state, array[v_id::text],
+          jsonb_build_object('r', v_start, 'n', 0));
+      end if;
+    end loop;
+
+    -- Deltas are computed against the ratings as they were BEFORE this game,
+    -- so the order players are processed in cannot change the result.
+    for i in 1 .. v_m loop
+      v_id  := v_players[i];
+      v_r_i := (v_state -> v_id::text -> 'r')::numeric;
+      v_n_i := (v_state -> v_id::text -> 'n')::integer;
+      v_k   := case when v_n_i < v_provisional then v_k_new else v_k_settled end;
+
+      v_sum := 0;
+      for j in 1 .. v_m loop
+        if i = j then
+          continue;
+        end if;
+        v_r_j := (v_state -> v_players[j]::text -> 'r')::numeric;
+
+        -- Finishing ahead is a win, level is a half. A shared win between two
+        -- players is worth the same to each as half a victory.
+        v_score := case
+                     when v_places[i] < v_places[j] then 1.0
+                     when v_places[i] = v_places[j] then 0.5
+                     else 0.0
+                   end;
+        v_expected := 1.0 / (1.0 + power(10.0, (v_r_j - v_r_i) / 400.0));
+        v_sum := v_sum + (v_score - v_expected);
+      end loop;
+
+      v_delta := (v_k::numeric / (v_m - 1)) * v_sum;
+
+      insert into rating_events (game_id, player_id, played_on, seq,
+                                 rating_before, rating_after, delta, k, opponents)
+      values (v_game.id, v_id, v_game.played_on, v_seq,
+              round(v_r_i, 2), round(v_r_i + v_delta, 2), round(v_delta, 2),
+              v_k, v_m - 1);
+    end loop;
+
+    -- Applied only once every delta for the game is known.
+    for i in 1 .. v_m loop
+      v_id := v_players[i];
+      v_state := jsonb_set(
+        v_state, array[v_id::text],
+        jsonb_build_object(
+          'r', (select rating_after from rating_events
+                 where game_id = v_game.id and player_id = v_id),
+          'n', (v_state -> v_id::text -> 'n')::integer + 1));
+    end loop;
+  end loop;
+end
+$fn$;
+
+create or replace function evaluate_achievements()
+returns void language plpgsql volatile as $fn$
+begin
+  delete from player_achievements where true;  -- safeupdate: see the header
+
+  -- First day won.
+  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
+  select distinct on (gr.player_id)
+         gr.player_id, 'first_blood', g.finished_at, gr.game_id
+    from game_results gr
+    join games g on g.id = gr.game_id
+   where gr.is_winner
+   order by gr.player_id, g.finished_at, gr.game_id;
+
+  -- First shut box, and the fifth.
+  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
+  select distinct on (gr.player_id)
+         gr.player_id, 'shut_the_box', g.finished_at, gr.game_id
+    from game_results gr
+    join games g on g.id = gr.game_id
+   where gr.is_shut_box
+   order by gr.player_id, g.finished_at, gr.game_id;
+
+  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
+  select player_id, 'box_collector', finished_at, game_id
+    from (
+      select gr.player_id, g.finished_at, gr.game_id,
+             row_number() over (partition by gr.player_id
+                                order by g.finished_at, gr.game_id) as nth
+        from game_results gr
+        join games g on g.id = gr.game_id
+       where gr.is_shut_box
+    ) ranked
+   where nth = 5;
+
+  -- A very good turn that was not quite perfect.
+  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
+  select distinct on (gr.player_id)
+         gr.player_id, 'low_roller', g.finished_at, gr.game_id
+    from game_results gr
+    join games g on g.id = gr.game_id
+    join rulesets r on r.id = gr.ruleset_id
+   where gr.score between 1 and 3
+     and r.rules->'scoring'->>'kind' = 'sum_open'
+   order by gr.player_id, g.finished_at, gr.game_id;
+
+  -- Games played.
+  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
+  select player_id, key, finished_at, game_id
+    from (
+      select gr.player_id, g.finished_at, gr.game_id,
+             row_number() over (partition by gr.player_id
+                                order by g.finished_at, gr.game_id) as nth
+        from game_results gr
+        join games g on g.id = gr.game_id
+    ) ranked
+    join (values ('regular_25', 25), ('century_100', 100)) as m(key, at_nth)
+      on ranked.nth = m.at_nth;
+
+  -- [concept: gaps-and-islands] Streaks run over days that were PLAYED, so a
+  -- weekend never breaks one. Numbering the wins inside each unbroken run gives
+  -- the day the streak reached three, five or ten.
+  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
+  select s.player_id, m.key, s.finished_at, s.game_id
+    from (
+      select islands.player_id,
+             row_number() over (partition by islands.player_id, islands.island
+                                order by islands.day_no) as run_length,
+             g.finished_at,
+             (select gr.game_id from game_results gr
+               where gr.player_id = islands.player_id
+                 and gr.played_on = islands.played_on
+                 and gr.is_winner
+               order by gr.game_id limit 1) as game_id
+        from (
+          select w.player_id, d.day_no, d.played_on,
+                 d.day_no - row_number() over (partition by w.player_id
+                                               order by d.day_no) as island
+            from daily_winners w
+            join (
+              select played_on,
+                     row_number() over (order by played_on) as day_no
+                from (select distinct played_on from games_valid) x
+            ) d using (played_on)
+        ) islands
+        join lateral (
+          select max(gv.finished_at) as finished_at
+            from games_valid gv where gv.played_on = islands.played_on
+        ) g on true
+    ) s
+    join (values ('streak_3', 3), ('streak_5', 5), ('streak_10', 10))
+      as m(key, at_length) on s.run_length = m.at_length;
+
+  -- The first game that took them to 1200.
+  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
+  select distinct on (re.player_id)
+         re.player_id, 'elo_1200', g.finished_at, re.game_id
+    from rating_events re
+    join games g on g.id = re.game_id
+   where re.rating_after >= 1200
+   order by re.player_id, re.seq;
+
+  -- Beating the strongest player at the table from well behind them.
+  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
+  select distinct on (underdog.player_id)
+         underdog.player_id, 'giant_slayer', g.finished_at, underdog.game_id
+    from rating_events underdog
+    join games g on g.id = underdog.game_id
+    join rating_events favourite
+      on favourite.game_id = underdog.game_id
+     and favourite.player_id <> underdog.player_id
+    join game_results me
+      on me.game_id = underdog.game_id and me.player_id = underdog.player_id
+    join game_results them
+      on them.game_id = favourite.game_id and them.player_id = favourite.player_id
+   where favourite.rating_before = (
+           select max(x.rating_before) from rating_events x
+            where x.game_id = underdog.game_id)
+     and underdog.rating_before <= favourite.rating_before - 150
+     and me.finish_position < them.finish_position
+   order by underdog.player_id, underdog.seq;
+
+  -- Won every day they turned up in one week, over at least three days.
+  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
+  select distinct on (weeks.player_id)
+         weeks.player_id, 'perfect_week', weeks.finished_at, null
+    from (
+      select per_day.player_id,
+             date_trunc('week', per_day.played_on) as week,
+             max(per_day.finished_at) as finished_at,
+             count(*) as days,
+             bool_and(per_day.won) as every_day
+        from (
+          select gr.player_id, gr.played_on,
+                 bool_or(gr.is_winner) as won,
+                 max(g.finished_at) as finished_at
+            from game_results gr
+            join games g on g.id = gr.game_id
+           group by gr.player_id, gr.played_on
+        ) per_day
+       group by per_day.player_id, date_trunc('week', per_day.played_on)
+    ) weeks
+   where weeks.days >= 3 and weeks.every_day
+   order by weeks.player_id, weeks.finished_at;
+
+  -- Repeatable: one per closed season won.
+  insert into player_achievements (player_id, achievement_key, earned_at,
+                                   season_id, times)
+  select sc.player_id,
+         'season_champion',
+         (select max(gv.finished_at) from games_valid gv
+           where gv.season_id = sc.season_id),
+         sc.season_id,
+         count(*) over (partition by sc.player_id)
+    from season_champions sc
+  on conflict (player_id, achievement_key) do nothing;
+end
+$fn$;

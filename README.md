@@ -120,13 +120,28 @@ pwsh -c "Test-NetConnection aws-1-eu-west-1.pooler.supabase.com -Port 5432 -Info
 - **Tether to a phone** and follow the CLI steps below. Preferred: `db push` is
   the source of truth, and it is the only route that can also take a backup.
 - **Use the dashboard SQL editor** (HTTPS, so it works from the office) with
-  `scripts/cutover/cutover_A_consolidated.sql` — every pending migration plus
-  the migration-history rows, in one transaction. Regenerate it with
-  `bash scripts/cutover/build-consolidated.sh` after adding a migration.
-  It applies all-or-nothing, and re-running it after a success fails on the
-  first statement without changing anything. This route cannot take a backup,
-  so export anything you would not want to lose first — `games.max_tile` is
-  dropped by 0004 and does not come back.
+  `scripts/cutover/cutover_consolidated.sql` — the pending migrations plus the
+  migration-history rows, in one transaction. Generate it for exactly the
+  versions production lacks, e.g. `bash scripts/cutover/build-consolidated.sh 0015 0016`
+  (check with `supabase migration list --linked` from a hotspot, or the
+  `supabase_migrations.schema_migrations` table in the editor). It applies
+  all-or-nothing, and re-running it after a success fails on the first
+  statement without changing anything. This route cannot take a backup, so
+  export anything you would not want to lose first.
+
+**Every RPC must be tested through PostgREST, not only in pgTAP.** The API
+connection loads Supabase's `safeupdate`, which refuses any `DELETE` or `UPDATE`
+without a `WHERE` clause (`21000`). pgTAP runs as `postgres` and cannot load
+that library, so a function can pass every test and still fail from the app —
+0008 and 0009 did, and crowning was broken from the app until 0016. The check
+is one curl per write path against the local stack:
+
+```bash
+curl -sS -X POST http://127.0.0.1:54321/rest/v1/rpc/finish_game -H "apikey: $SERVICE_KEY" -H "Authorization: Bearer $SERVICE_KEY" -H "Content-Type: application/json" -d '{"p_actor":"…","p_game_id":"…"}'
+```
+
+`supabase/tests/0016_safeupdate.sql` scans every function body for bare
+deletes and updates so that particular mistake cannot come back.
 
 **Then production:**
 
