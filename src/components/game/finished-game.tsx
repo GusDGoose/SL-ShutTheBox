@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { dayLabel } from "@/lib/dates";
 import { supabaseAdmin } from "@/lib/supabase";
-import { extractVideoId } from "@/lib/youtube";
+import { resolveClip, type ClipSource } from "@/lib/audio/clip-source";
 import { buttonClass } from "@/components/ui/button";
 import { MiniBoard } from "@/components/board/mini-board";
 import {
@@ -9,7 +9,6 @@ import {
   type CelebrationWinner,
   type EarnedBadge,
 } from "@/components/celebration";
-import type { Clip } from "@/lib/audio/youtube-api";
 import type {
   AchievementRow,
   GameResultRow,
@@ -19,20 +18,11 @@ import type {
 import { tilesOf, type Ruleset } from "@/lib/rules";
 
 /**
- * The slice of a player's song to play, or null if they have not set one that
- * can be parsed. The settings come from the clip columns added in 0006.
+ * The clip a player's anthem plays from — their uploaded file if they have
+ * one, otherwise their YouTube URL — or null if neither can be played.
  */
-export function clipFor(player: Player | undefined): Clip | null {
-  if (!player?.song_url) return null;
-  const videoId = extractVideoId(player.song_url);
-  if (!videoId) return null;
-  return {
-    videoId,
-    startSeconds: player.song_start_seconds ?? 0,
-    endSeconds: player.song_end_seconds,
-    fadeMs: player.song_fade_ms ?? 1500,
-    loop: player.song_loop ?? false,
-  };
+export function clipFor(player: Player | undefined): ClipSource | null {
+  return player ? resolveClip(player) : null;
 }
 
 /**

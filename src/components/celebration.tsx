@@ -6,14 +6,14 @@ import { Button } from "@/components/ui/button";
 import { useSfx } from "@/components/ui/audio-provider";
 import { useToast } from "@/components/ui/toast";
 import { AnthemStage, type Anthem } from "@/components/game/anthem-stage";
-import type { Clip } from "@/lib/audio/youtube-api";
+import type { ClipSource } from "@/lib/audio/clip-source";
 
 export type CelebrationWinner = {
   playerId: string;
   name: string;
   emoji: string;
   streak: number; // current daily-win streak, including today
-  clip: Clip | null; // null when they have no song set, or it will not parse
+  clip: ClipSource | null; // null when they have no song set, or it will not parse
   songUrl: string | null; // raw URL, for the "open on YouTube" fallback
 };
 

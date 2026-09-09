@@ -24,7 +24,7 @@ import {
   type LiveSnapshot,
 } from "@/lib/live";
 import { boardTiles, instantWinOf, maxScoreOf, scoreOf } from "@/lib/rules";
-import type { Clip } from "@/lib/audio/youtube-api";
+import type { ClipSource } from "@/lib/audio/clip-source";
 import { useLiveGame } from "@/lib/use-live-game";
 import {
   abandonGame,
@@ -52,7 +52,7 @@ export function GameController({
   initial: LiveSnapshot;
   meId: string;
   /** Each player's song clip, for the few seconds that open their turn. */
-  walkUps?: Record<string, Clip | null>;
+  walkUps?: Record<string, ClipSource | null>;
 }) {
   // Subscribed as well as driving: without this the scorekeeper would never
   // notice being taken over, and would keep tapping a board the server has

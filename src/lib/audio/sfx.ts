@@ -185,6 +185,13 @@ export type SfxPlayer = {
   /** Resume after the tab was backgrounded, or after the first user gesture. */
   resume: () => Promise<void>;
   close: () => void;
+  /**
+   * The context itself, for the one other thing that plays audio bytes: an
+   * uploaded song clip. It rides on this context because it was unlocked by
+   * a real gesture; a second context made from an effect is what Safari
+   * refuses to start.
+   */
+  ctx: AudioContext;
 };
 
 /**
@@ -209,5 +216,6 @@ export function createSfxPlayer(ctx: Ctx): SfxPlayer {
     close() {
       void ctx.close();
     },
+    ctx,
   };
 }

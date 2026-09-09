@@ -2,38 +2,58 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SkipForward } from "lucide-react";
-import {
-  createClipPlayer,
-  loadYouTubeApi,
-  type Clip,
-} from "@/lib/audio/youtube-api";
-
-/** How much of a song a walk-up gets, when no end is set. */
-const WALK_UP_SECONDS = 10;
+import { useSfx } from "@/components/ui/audio-provider";
+import { walkUpOf, type ClipSource } from "@/lib/audio/clip-source";
+import { createFileClipPlayer } from "@/lib/audio/file-clip-player";
+import { createClipPlayer, loadYouTubeApi } from "@/lib/audio/youtube-api";
 
 /**
  * A few seconds of the player's own song as their turn begins.
  *
  * Remounted per turn via a key, so each player gets their own entrance. The
  * page has had a user gesture by this point — somebody tapped End turn — which
- * is what lets it make a sound at all.
+ * is what lets it make a sound at all. An uploaded clip plays through Web
+ * Audio on the context that gesture unlocked; a YouTube clip through a
+ * whisper-sized embed.
  */
 export function WalkUpPlayer({
   clip,
   playerName,
   muted,
 }: {
-  clip: Clip;
+  clip: ClipSource;
   playerName: string;
   muted: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const stop = useRef<(() => void) | null>(null);
   const [done, setDone] = useState(false);
+  const { audioContext } = useSfx();
 
   useEffect(() => {
     if (muted) return;
     let cancelled = false;
+    // A walk-up is a taste, not the whole song.
+    const capped = walkUpOf(clip);
+
+    if (capped.kind === "file") {
+      const ctx = audioContext() ?? new AudioContext();
+      const controller = createFileClipPlayer(ctx, capped.url, capped, 70, () => {
+        if (!cancelled) setDone(true);
+      });
+      controller.ready.catch(() => {
+        if (!cancelled) setDone(true); // no walk-up is not worth an error
+      });
+      stop.current = () => {
+        controller.stop();
+        setDone(true);
+      };
+      controller.start();
+      return () => {
+        cancelled = true;
+        controller.stop();
+      };
+    }
 
     void (async () => {
       let YT;
@@ -43,18 +63,6 @@ export function WalkUpPlayer({
         return; // no walk-up is not worth surfacing an error for
       }
       if (cancelled || !host.current) return;
-
-      // A walk-up is a taste, not the whole song: cap it unless the player has
-      // set a shorter end of their own.
-      const capped: Clip = {
-        ...clip,
-        endSeconds: Math.min(
-          clip.endSeconds ?? Number.POSITIVE_INFINITY,
-          clip.startSeconds + WALK_UP_SECONDS,
-        ),
-        loop: false,
-        fadeMs: Math.min(clip.fadeMs, 600),
-      };
 
       new YT.Player(host.current, {
         videoId: capped.videoId,
@@ -91,6 +99,8 @@ export function WalkUpPlayer({
       cancelled = true;
       stop.current?.();
     };
+    // audioContext is a stable accessor; the clip and mute are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clip, muted]);
 
   if (muted || done) return null;
@@ -107,7 +117,7 @@ export function WalkUpPlayer({
         <SkipForward aria-hidden size={12} /> Skip
       </button>
       {/* Kept in the layout at a whisper of a size: a zero-size player gets
-          throttled by the browser and never starts. */}
+          throttled by the browser and never starts. Unused for file clips. */}
       <div ref={host} className="size-1 overflow-hidden opacity-0" />
     </div>
   );

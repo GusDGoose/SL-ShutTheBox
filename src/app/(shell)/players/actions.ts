@@ -10,7 +10,9 @@ import type { ActionResult } from "@/app/(focus)/game/actions";
 // [concept: useActionState contract] These actions take (previousState,
 // formData) and return the new state — React 19's form-state pattern. The
 // client form shows `error` inline without any client-side fetch code.
-export type PlayerFormState = { error?: string; ok?: boolean };
+// `key` changes on every success so the add-player form can remount and
+// clear itself — the v1 form kept the last colleague's name in the box.
+export type PlayerFormState = { error?: string; ok?: boolean; key?: number };
 
 function readForm(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
@@ -54,7 +56,7 @@ export async function createPlayer(
     };
   }
   revalidatePath("/players");
-  return { ok: true };
+  return { ok: true, key: Date.now() };
 }
 
 export async function updatePlayer(

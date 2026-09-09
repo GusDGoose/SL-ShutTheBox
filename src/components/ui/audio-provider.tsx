@@ -63,6 +63,8 @@ type AudioApi = {
   play: (name: SfxName) => void;
   muted: boolean;
   setMuted: (muted: boolean) => void;
+  /** The unlocked AudioContext, or null before the first gesture. */
+  audioContext: () => AudioContext | null;
 };
 
 const AudioContextValue = createContext<AudioApi | null>(null);
@@ -117,7 +119,12 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<AudioApi>(
-    () => ({ play, muted, setMuted: muteStore.set }),
+    () => ({
+      play,
+      muted,
+      setMuted: muteStore.set,
+      audioContext: () => playerRef.current?.ctx ?? null,
+    }),
     [play, muted],
   );
 
@@ -138,6 +145,7 @@ export function useSfx(): AudioApi {
       play: () => {},
       muted: true,
       setMuted: () => {},
+      audioContext: () => null,
     }
   );
 }

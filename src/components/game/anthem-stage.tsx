@@ -3,18 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { useSfx } from "@/components/ui/audio-provider";
+import type { ClipSource } from "@/lib/audio/clip-source";
+import { createFileClipPlayer } from "@/lib/audio/file-clip-player";
 import {
   createClipPlayer,
   loadYouTubeApi,
   mixVolume,
-  type Clip,
 } from "@/lib/audio/youtube-api";
 
 export type Anthem = {
   playerId: string;
   name: string;
   emoji: string;
-  clip: Clip | null;
+  clip: ClipSource | null;
   songUrl: string | null;
 };
 
@@ -26,15 +28,23 @@ export type Anthem = {
  * winner) and the office decided it was the best part of the game, so it is
  * deliberate now: volumes are mixed, they start together, and one button stops
  * the lot. Do not turn this into a queue.
+ *
+ * Two kinds of clip share the stage. An uploaded file plays through Web Audio
+ * on the context the first tap unlocked — exact trim, real fades, works on an
+ * iPhone. A YouTube clip plays in a small embed, because that is the only way
+ * YouTube allows.
  */
 export function AnthemStage({ anthems }: { anthems: Anthem[] }) {
   const hosts = useRef<Map<string, HTMLDivElement>>(new Map());
   const stoppers = useRef<(() => void)[]>([]);
   const [playing, setPlaying] = useState(false);
   const [failed, setFailed] = useState<string[]>([]);
+  const { audioContext } = useSfx();
 
   const withSongs = anthems.filter((a) => a.clip !== null);
   const withoutSongs = anthems.filter((a) => a.clip === null);
+  const files = withSongs.filter((a) => a.clip!.kind === "file");
+  const embeds = withSongs.filter((a) => a.clip!.kind === "youtube");
 
   useEffect(() => {
     let cancelled = false;
@@ -43,53 +53,79 @@ export function AnthemStage({ anthems }: { anthems: Anthem[] }) {
     // The volume each anthem gets so a three-way tie is chaos rather than mush.
     const volume = mixVolume(withSongs.length);
 
-    void (async () => {
-      let YT;
-      try {
-        YT = await loadYouTubeApi();
-      } catch {
-        if (!cancelled) setFailed(withSongs.map((a) => a.playerId));
-        return;
-      }
-      if (cancelled) return;
-
-      for (const anthem of withSongs) {
-        const host = hosts.current.get(anthem.playerId);
-        if (!host || !anthem.clip) continue;
-
-        const clip = anthem.clip;
-        new YT.Player(host, {
-          videoId: clip.videoId,
-          // Nocookie keeps YouTube from setting an advertising cookie on a
-          // colleague's browser just because they won.
-          host: "https://www.youtube-nocookie.com",
-          playerVars: {
-            autoplay: 1,
-            controls: 0,
-            disablekb: 1,
-            modestbranding: 1,
-            playsinline: 1,
-            start: Math.floor(clip.startSeconds),
+    // Uploaded clips first: they need no network round-trip to a third party
+    // and start within the same gesture as the crown.
+    if (files.length > 0) {
+      const ctx = audioContext() ?? new AudioContext();
+      for (const anthem of files) {
+        const clip = anthem.clip as Extract<ClipSource, { kind: "file" }>;
+        const controller = createFileClipPlayer(ctx, clip.url, clip, volume);
+        // "Playing" once the bytes have actually arrived, mirroring the
+        // embed's onReady — a decode that fails should not light the button.
+        controller.ready.then(
+          () => {
+            if (!cancelled) setPlaying(true);
           },
-          events: {
-            onReady: (event) => {
-              if (cancelled) return;
-              const controller = createClipPlayer(event.target, clip, volume);
-              stoppers.current.push(() => controller.stop());
-              controller.start();
-              setPlaying(true);
-            },
-            // 101 and 150 mean the owner disallowed embedding, which is common
-            // enough that it needs a graceful answer rather than silence.
-            onError: () => {
-              if (!cancelled) {
-                setFailed((prev) => [...prev, anthem.playerId]);
-              }
-            },
+          () => {
+            if (!cancelled) setFailed((prev) => [...prev, anthem.playerId]);
           },
-        });
+        );
+        stoppers.current.push(() => controller.stop());
+        controller.start();
       }
-    })();
+    }
+
+    if (embeds.length > 0) {
+      void (async () => {
+        let YT;
+        try {
+          YT = await loadYouTubeApi();
+        } catch {
+          if (!cancelled) {
+            setFailed((prev) => [...prev, ...embeds.map((a) => a.playerId)]);
+          }
+          return;
+        }
+        if (cancelled) return;
+
+        for (const anthem of embeds) {
+          const host = hosts.current.get(anthem.playerId);
+          const clip = anthem.clip as Extract<ClipSource, { kind: "youtube" }>;
+          if (!host) continue;
+
+          new YT.Player(host, {
+            videoId: clip.videoId,
+            // Nocookie keeps YouTube from setting an advertising cookie on a
+            // colleague's browser just because they won.
+            host: "https://www.youtube-nocookie.com",
+            playerVars: {
+              autoplay: 1,
+              controls: 0,
+              disablekb: 1,
+              modestbranding: 1,
+              playsinline: 1,
+              start: Math.floor(clip.startSeconds),
+            },
+            events: {
+              onReady: (event) => {
+                if (cancelled) return;
+                const controller = createClipPlayer(event.target, clip, volume);
+                stoppers.current.push(() => controller.stop());
+                controller.start();
+                setPlaying(true);
+              },
+              // 101 and 150 mean the owner disallowed embedding, which is
+              // common enough that it needs a graceful answer, not silence.
+              onError: () => {
+                if (!cancelled) {
+                  setFailed((prev) => [...prev, anthem.playerId]);
+                }
+              },
+            },
+          });
+        }
+      })();
+    }
 
     return () => {
       cancelled = true;
@@ -126,10 +162,10 @@ export function AnthemStage({ anthems }: { anthems: Anthem[] }) {
         </div>
       )}
 
-      {/* The players themselves. Audio is the point, so they are kept small
-          rather than hidden — a zero-size iframe gets throttled. */}
       <div className="flex flex-wrap gap-2">
-        {withSongs.map((anthem) => (
+        {/* Embeds are kept small rather than hidden: a zero-size iframe gets
+            throttled. File clips need no box at all, just a name. */}
+        {embeds.map((anthem) => (
           <div key={anthem.playerId} className="w-40">
             <div
               ref={(node) => {
@@ -148,6 +184,17 @@ export function AnthemStage({ anthems }: { anthems: Anthem[] }) {
               </a>
             )}
           </div>
+        ))}
+        {files.map((anthem) => (
+          <p
+            key={anthem.playerId}
+            className="rounded-full border border-line px-3 py-1 text-xs text-ink-muted"
+          >
+            <span aria-hidden>{anthem.emoji}</span>{" "}
+            {failed.includes(anthem.playerId)
+              ? `${anthem.name}'s clip would not load`
+              : `${anthem.name}'s own clip`}
+          </p>
         ))}
       </div>
 
