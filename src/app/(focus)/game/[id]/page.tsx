@@ -10,6 +10,7 @@ import { AuditTrail } from "@/components/game/audit-trail";
 import { DeletedBanner } from "@/components/game/deleted-banner";
 import { GameController } from "@/components/game/game-controller";
 import { WatchGame } from "@/components/game/watch-game";
+import { GamePhoto } from "@/components/photo/game-photo";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,26 @@ export default async function GamePage({
   const shell = "mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-6";
 
   if (snapshot.game.status === "finished") {
+    // The photo is not part of the live snapshot — it has no business in a
+    // broadcast — so it is read here, with who pinned it for the caption.
+    const { data: photoRow } = await supabaseAdmin()
+      .from("games")
+      .select("photo_path, photo_at, photo_by")
+      .eq("id", snapshot.game.id)
+      .maybeSingle();
+    const photo = photoRow as
+      | { photo_path: string | null; photo_at: string | null; photo_by: string | null }
+      | null;
+    let pinnedBy: string | null = null;
+    if (photo?.photo_by) {
+      const { data: who } = await supabaseAdmin()
+        .from("players")
+        .select("name")
+        .eq("id", photo.photo_by)
+        .maybeSingle();
+      pinnedBy = (who as { name: string } | null)?.name ?? null;
+    }
+
     return (
       <main className={shell}>
         {snapshot.game.deleted && (
@@ -57,6 +78,14 @@ export default async function GamePage({
           // A deleted game is being examined, not celebrated.
           celebrate={crown === "1" && !snapshot.game.deleted}
         />
+        {!snapshot.game.deleted && (
+          <GamePhoto
+            gameId={snapshot.game.id}
+            version={photo?.photo_path ? (photo.photo_at ?? photo.photo_path) : null}
+            pinnedBy={pinnedBy}
+            knowsWho={me !== null}
+          />
+        )}
         <Link
           href={`/game/${snapshot.game.id}/edit`}
           className={`${buttonClass("secondary")} self-start`}

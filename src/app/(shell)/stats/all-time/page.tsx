@@ -113,7 +113,9 @@ export default async function AllTimePage() {
               {leaderboard.map((s, i) => (
                 <StatsRow key={s.player_id} highlight={i === 0}>
                   <Cell header>
-                    <span aria-hidden>{s.emoji}</span> {s.name}
+                    <Link href={`/players/${s.player_id}`} className="hover:underline">
+                      <span aria-hidden>{s.emoji}</span> {s.name}
+                    </Link>
                     {!s.is_active && (
                       <span className="ml-1 text-xs text-ink-muted">
                         benched

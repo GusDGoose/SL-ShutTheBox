@@ -22,6 +22,15 @@ const WORDING: Record<string, string> = {
   "game.photo": "added a photo",
 };
 
+// set_game_photo records both directions under one action, telling them
+// apart in the note; the wording follows the note rather than the table.
+function wordingFor(entry: Entry): string {
+  if (entry.action === "game.photo" && entry.note === "photo removed") {
+    return "took the photo down";
+  }
+  return WORDING[entry.action] ?? entry.action;
+}
+
 /**
  * Who changed this game, and when.
  *
@@ -73,14 +82,15 @@ export async function AuditTrail({ gameId }: { gameId: string }) {
                 ? names.get(entry.actor_player_id) ?? "Someone"
                 : "The system"}
             </span>
-            <span>{WORDING[entry.action] ?? entry.action}</span>
+            <span>{wordingFor(entry)}</span>
             <span className="tabular-nums">
               {new Date(entry.at).toLocaleString("en-GB", {
                 dateStyle: "medium",
                 timeStyle: "short",
               })}
             </span>
-            {entry.note && (
+            {/* The photo notes are bookkeeping already said by the wording. */}
+            {entry.note && entry.action !== "game.photo" && (
               <span className="w-full italic">&ldquo;{entry.note}&rdquo;</span>
             )}
           </li>

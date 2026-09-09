@@ -72,8 +72,14 @@ export default async function Home() {
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-4 sm:p-6">
+      {/* The date is the way into the history: tap it for this month. */}
       <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold">
-        {dayLabel(today)}
+        <Link
+          href={`/history/${today.slice(0, 7)}`}
+          className="rounded-[var(--radius-control)] hover:text-brass-ink"
+        >
+          {dayLabel(today)}
+        </Link>
       </h1>
 
       {liveSnapshot && (

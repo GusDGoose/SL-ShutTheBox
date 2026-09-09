@@ -99,7 +99,9 @@ export async function SeasonStats({
               {standings.map((s) => (
                 <StatsRow key={s.player_id} highlight={s.rnk === 1}>
                   <Cell header>
-                    <span aria-hidden>{s.emoji}</span> {s.name}
+                    <Link href={`/players/${s.player_id}`} className="hover:underline">
+                      <span aria-hidden>{s.emoji}</span> {s.name}
+                    </Link>
                     {s.rnk === 1 && (
                       <>
                         {" "}
@@ -249,6 +251,9 @@ export async function SeasonStats({
       <div className="flex flex-wrap gap-3">
         <Link href="/stats/all-time" className={buttonClass("secondary")}>
           All-time &amp; hall of fame →
+        </Link>
+        <Link href="/history" className={buttonClass("ghost")}>
+          Browse history
         </Link>
         <Link href="/rules" className={buttonClass("ghost")}>
           House rules
