@@ -139,6 +139,61 @@ export async function claimScorekeeper(gameId: string): Promise<SnapshotResult> 
   );
 }
 
+// ---------------------------------------------------------------------------
+// The roster, mid-game (0017)
+// ---------------------------------------------------------------------------
+
+/**
+ * The roster RPCs raise messages written for the person at the table — "hand
+ * over scorekeeping first", "end or abandon the turn first" — under the same
+ * STB codes the rest of the flow uses for quite different things. For these
+ * two, the database's own sentence is the better copy.
+ */
+async function rpcSnapshotVerbatim(
+  name: "join_game" | "leave_game",
+  args: Record<string, unknown>,
+): Promise<SnapshotResult> {
+  const { data, error } = await supabaseAdmin().rpc(name, args);
+  if (error) {
+    const own = error.code?.startsWith("STB") ? error.message : null;
+    return {
+      ok: false,
+      error: own
+        ? own.charAt(0).toUpperCase() + own.slice(1) + "."
+        : describeDbError(error),
+    };
+  }
+  return { ok: true, snapshot: parseSnapshot(data) };
+}
+
+/** Someone arrived late. They slot in last; if everyone has rolled, they are up now. */
+export async function joinGame(
+  gameId: string,
+  playerId: string,
+): Promise<SnapshotResult> {
+  return withSession((actorId) =>
+    rpcSnapshotVerbatim("join_game", {
+      p_actor: actorId,
+      p_game_id: gameId,
+      p_player_id: playerId,
+    }),
+  );
+}
+
+/** Someone was picked and is not going to play. Only before they have rolled. */
+export async function leaveGame(
+  gameId: string,
+  playerId: string,
+): Promise<SnapshotResult> {
+  return withSession((actorId) =>
+    rpcSnapshotVerbatim("leave_game", {
+      p_actor: actorId,
+      p_game_id: gameId,
+      p_player_id: playerId,
+    }),
+  );
+}
+
 export async function abandonGame(
   gameId: string,
   note?: string,

@@ -13,6 +13,7 @@ import { ScoreReadout } from "@/components/board/score-readout";
 import { ConnectionDot } from "@/components/game/connection-dot";
 import { WalkUpPlayer } from "@/components/game/walk-up-player";
 import { ResultsList } from "@/components/game/results-list";
+import { RosterControls } from "@/components/game/roster-controls";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useSfx } from "@/components/ui/audio-provider";
@@ -25,6 +26,7 @@ import {
 } from "@/lib/live";
 import { boardTiles, instantWinOf, maxScoreOf, scoreOf } from "@/lib/rules";
 import type { ClipSource } from "@/lib/audio/clip-source";
+import type { Player } from "@/lib/types";
 import { useLiveGame } from "@/lib/use-live-game";
 import {
   abandonGame,
@@ -48,11 +50,14 @@ export function GameController({
   initial,
   meId,
   walkUps = {},
+  roster = [],
 }: {
   initial: LiveSnapshot;
   meId: string;
   /** Each player's song clip, for the few seconds that open their turn. */
   walkUps?: Record<string, ClipSource | null>;
+  /** The active roster, so a late arrival can be added mid-game. */
+  roster?: Player[];
 }) {
   // Subscribed as well as driving: without this the scorekeeper would never
   // notice being taken over, and would keep tapping a board the server has
@@ -290,6 +295,14 @@ export function GameController({
           </p>
         )}
         <ResultsList snapshot={snapshot} onCorrect={startEdit} />
+        {/* Somebody arriving now still gets a turn: adding them here re-opens
+            the game for exactly one roll before it can be crowned. */}
+        <RosterControls
+          gameId={gameId}
+          players={snapshot.players}
+          roster={roster}
+          onSnapshot={apply}
+        />
         <Button
           size="lg"
           className="self-start"
@@ -381,6 +394,14 @@ export function GameController({
       )}
 
       <ResultsList snapshot={snapshot} heading="So far" />
+
+      {/* Late arrivals and early leavers, without abandoning the game. */}
+      <RosterControls
+        gameId={gameId}
+        players={snapshot.players}
+        roster={roster}
+        onSnapshot={apply}
+      />
 
       <button
         type="button"

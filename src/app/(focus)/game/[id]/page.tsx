@@ -124,22 +124,24 @@ export default async function GamePage({
   // Split rather than a ternary so the compiler can see that `me` is real
   // inside the scorekeeper branch, instead of needing a non-null assertion.
   if (me && snapshot.game.scorekeeper_player_id === me.id) {
-    // Walk-up clips for everyone at the table, so a turn can open with a few
-    // seconds of that player's own song.
-    const { data: roster } = await supabaseAdmin()
+    // The active roster: walk-up clips for whoever is at the table, and the
+    // list a late arrival is added from.
+    const { data: rosterRows } = await supabaseAdmin()
       .from("players")
       .select("*")
-      .in(
-        "id",
-        snapshot.players.map((p) => p.player_id),
-      );
-    const walkUps = Object.fromEntries(
-      ((roster ?? []) as Player[]).map((p) => [p.id, clipFor(p)]),
-    );
+      .eq("is_active", true)
+      .order("created_at");
+    const roster = (rosterRows ?? []) as Player[];
+    const walkUps = Object.fromEntries(roster.map((p) => [p.id, clipFor(p)]));
 
     return (
       <main className={shell}>
-        <GameController initial={snapshot} meId={me.id} walkUps={walkUps} />
+        <GameController
+          initial={snapshot}
+          meId={me.id}
+          walkUps={walkUps}
+          roster={roster}
+        />
       </main>
     );
   }

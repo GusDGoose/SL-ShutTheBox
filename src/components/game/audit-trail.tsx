@@ -20,6 +20,9 @@ const WORDING: Record<string, string> = {
   "game.abandon": "abandoned it",
   "game.claim_scorekeeper": "took over as scorekeeper",
   "game.photo": "added a photo",
+  // The note carries who: "added Dev", "removed Cleo (never rolled)".
+  "game.join": "changed who was playing —",
+  "game.leave": "changed who was playing —",
 };
 
 // set_game_photo records both directions under one action, telling them

@@ -37,6 +37,26 @@ export function WatchGame({
   knowsWho: boolean;
 }) {
   const { snapshot, connection } = useLiveGame(initial.game.id, initial);
+
+  // Who joined or left since the last board we showed, for the live region.
+  // [concept: adjusting state during render] The previous roster is state,
+  // compared against the incoming one while rendering; React re-runs the
+  // render with the new values at once. Every snapshot carries a fresh players
+  // array, so the news clears itself on the next ordinary update.
+  const [seenPlayers, setSeenPlayers] = useState(initial.players);
+  const [rosterNews, setRosterNews] = useState("");
+  if (seenPlayers !== snapshot.players) {
+    const before = new Map(seenPlayers.map((p) => [p.player_id, p.name]));
+    const nowIds = new Set(snapshot.players.map((p) => p.player_id));
+    const joined = snapshot.players
+      .filter((p) => !before.has(p.player_id))
+      .map((p) => `${p.name} joined the game.`);
+    const left = [...before]
+      .filter(([id]) => !nowIds.has(id))
+      .map(([, name]) => `${name} left the game.`);
+    setSeenPlayers(snapshot.players);
+    setRosterNews([...joined, ...left].join(" "));
+  }
   const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -98,6 +118,7 @@ export function WatchGame({
 
       {/* Announced so the board is followable without watching it. */}
       <p className="sr-only" aria-live="polite">
+        {rosterNews && `${rosterNews} `}
         {player ? `${player.name} is up.` : "Waiting for the next turn."}
       </p>
 
