@@ -1,31 +1,56 @@
 # 🎲 Shut the Box
 
-Daily office Shut the Box tracker: record each day's game on a tappable replica
-of the board (or type scores), crown the winner with confetti and their victory
-song, and keep the stats forever. Lowest score wins the day; ties share it;
-score 0 = 📦 shut the box = instant win.
+Daily office Shut the Box tracker. One person keeps score on a tappable replica
+of the board while everyone else watches it live on their own phone; the day's
+winner is crowned with confetti and their victory song. Lowest score wins the
+day, ties share it, and 0 — 📦 shut the box — ends the game on the spot.
 
-**Stack:** Next.js (App Router) on Vercel · Supabase Postgres · Tailwind.
-All stats (winners, averages, streaks, monthly champions) are computed by SQL
-views in [supabase/migrations/0002_views.sql](supabase/migrations/0002_views.sql) —
-you can audit every number on the stats page with plain SQL.
+**Stack:** Next.js 16 (App Router) on Vercel · Supabase Postgres · Tailwind v4.
+
+Every derived number — winners, averages, streaks, ratings, badges, standings —
+is computed by SQL views and functions in `supabase/migrations/`, so any figure
+on any page can be audited with plain SQL. Nothing is aggregated twice in
+TypeScript. `0007_views.sql` is where the stats live.
 
 ## How it works
 
-- **PIN gate** — `src/proxy.ts` redirects every route to `/pin` until the shared
-  team PIN has been entered once per device (SHA-256 cookie, 1 year).
-- **No Supabase keys in the browser** — all data access happens in Server
-  Actions / server components via the service-role key (`src/lib/supabase.ts`
-  is `server-only`). RLS is deny-all; only `service_role` has grants.
-- **Game flow** — the in-progress game is pure client state
-  (`src/components/game-screen.tsx`); one server action (`saveGame`) writes it
-  all at once. Refreshing mid-game loses the in-progress turn — by design, v1.
+- **PIN, then a name.** `src/proxy.ts` sends every route to `/pin` until the
+  shared team PIN has been entered once per device, then to `/whoami` to pick
+  which player this device is. Both are HMAC-signed cookies
+  (`SESSION_SECRET`), and the identity is what signs edits and picks fika
+  duties — there are no passwords and no accounts.
+- **The game lives in the database, not in a phone.** Every tap is a server
+  action calling one plpgsql RPC (`supabase/migrations/0010_rpc_game_flow.sql`),
+  so a refresh resumes the game and a second phone can watch it. One
+  scorekeeper drives; everyone else spectates over Supabase Realtime, with
+  5-second polling as the fallback.
+- **SQL owns the rules.** Scoring, whose turn it is, who won, what a valid game
+  is — all decided in the database, which raises `STB0x` error codes the app
+  turns into copy. A second client cannot get past a rule by not knowing it.
 - **Winner is derived, never stored** — `game_results.is_winner` is a window
-  function over each game, so ties become shared wins automatically.
-- **Streaks** — consecutive *played* days won (weekends don't break them),
-  computed with gaps-and-islands SQL in `player_streaks`.
-- **"Today"** is always Europe/Stockholm: DB default on `games.played_on` for
-  writes, `src/lib/dates.ts` for reads. Never compute it any other way.
+  function over each game, so a tie is a shared win by construction and
+  correcting a score re-crowns automatically.
+- **Rulesets and seasons are first-class.** A season (quarterly) runs a
+  ruleset; a game snapshots the one it was played under. Tile count, scoring,
+  win direction and tie policy are all ruleset parameters, so a variant season
+  needs no code.
+- **Nothing is permanent.** Scores can be corrected, games backdated,
+  soft-deleted, restored and undone from the app, and every change goes into
+  `audit_log` with who made it. Ratings and badges re-settle on every edit.
+- **"Today"** is always Europe/Stockholm: `stockholm_today()` in the database,
+  `src/lib/dates.ts` in the app. Never compute it any other way.
+
+## The pages
+
+| | |
+|---|---|
+| `/` | today's game — live card, results, the way into the history |
+| `/play` → `/game/[id]` | setup, then the board: taps, turns, review, crowning |
+| `/record` | a game played without the app, entered after the fact |
+| `/stats`, `/stats/all-time`, `/stats/season/[id]` | standings, ratings, distribution, form, head-to-head, hall of fame |
+| `/history/[month]` | every game of a month, day by day, with the photo scrapbook |
+| `/players`, `/players/[id]` | the roster and each player's profile, badges and song clip |
+| `/rules` | the house rules, rendered from the season's ruleset |
 
 ## Local development
 
@@ -39,9 +64,10 @@ npm run dev
 
 `npm run db:start` prints the local `API URL` and `service_role` key — put
 them in `.env.local` (copy `.env.example`) together with a `TEAM_PIN`.
-Useful: Supabase Studio runs at http://127.0.0.1:54323, `npm run db:reset`
-rebuilds the DB from migrations + seed, and `npm run db:types` regenerates
-`src/lib/database.types.ts` from the local schema.
+Useful: Supabase Studio runs at http://127.0.0.1:54323, and `npm run db:reset`
+rebuilds the DB from migrations + seed. (`npm run db:types` generates a typed
+client from the local schema, but the app does not use it yet — row shapes are
+still hand-written in `src/lib/types.ts`. Adopting it is on the list below.)
 
 Checks: `npm run lint`, `npm run typecheck`, `npm test` (vitest — pure modules
 in node, components in jsdom), `npm run db:test` (pgTAP tests for the SQL views
@@ -85,12 +111,17 @@ and functions; needs the local stack running), `npm run e2e` (Playwright).
    post to the channel, so treat it like a password and rotate it by recreating
    the flow.
 
-## Cutting over to v2
+## Deploying a schema change
 
-Migrations `0003`–`0014` turn the v1 schema into the v2 one. They rewrite every
-stats view, so the app and the schema have to move together: a v1 deployment
-against the v2 schema writes `games` rows that land as `in_progress` and are
-invisible to every view. Budget one sitting, after a game day is over.
+The v1 → v2 cutover happened on 2026-09-08 (migrations `0003`–`0014`) and D8 on
+2026-09-09 (`0015`–`0017`). This section is the runbook that came out of it, and
+applies to any migration from here on.
+
+**The app and the schema move together.** A deployment one migration behind can
+write rows the new views cannot see, or call a function that no longer exists —
+the 2026-09-08 game was lost that way, to a `season_id` that the deployed v1
+code did not know to set. Push the migration and deploy in the same sitting,
+after a game day is over.
 
 **Rehearse it first.** Every pgTAP test runs on a database built from scratch,
 so the backfills in `0004`–`0014` are only ever exercised against zero rows.
@@ -201,11 +232,14 @@ a fresh project.
 1. Write a new numbered file in `supabase/migrations/` (never edit an applied one).
 2. `npm run db:reset` — rebuilds locally from scratch, proving the migration works
    on an empty database and that the seed still loads.
-3. `npm run db:types` — regenerate `src/lib/database.types.ts`, commit the diff.
-4. `npm run db:test` — pgTAP tests for whatever the migration adds or changes.
-5. `npm run db:push`, then `npm run db:diff` (must print nothing), and deploy the
-   app in the same sitting — an old deployment against a new schema writes rows
-   the new code can't see.
+3. `npm run db:test` — pgTAP tests for whatever the migration adds or changes.
+4. **Call every new or changed RPC through PostgREST**, not only from pgTAP —
+   see the `safeupdate` warning above. This is the step that catches what tests
+   cannot.
+5. `npm run db:push`, then `npm run db:diff` (see the note above on what a
+   clean diff looks like), and deploy the app in the same sitting.
+6. Update `src/lib/types.ts` by hand if the change touches a row shape the app
+   reads — until the generated client is adopted, nothing checks that for you.
 
 ## Gotchas worth knowing
 
@@ -214,19 +248,30 @@ a fresh project.
   gives API roles no privileges by default (see 0001_tables.sql).
 - Supabase free tier pauses after ~1 week idle; restore from the dashboard
   (data is kept). Daily play prevents it.
-- The victory song only autoplays because the embed mounts inside the
+- The victory song only autoplays because the player is created inside the
   "Crown the winner" tap (browser autoplay policy). Some videos disallow
-  embedding — the "Open on YouTube" fallback link always shows.
+  embedding — the "Open on YouTube" fallback link always shows. An uploaded
+  clip plays through Web Audio on the context the first tap unlocked; a second
+  AudioContext created from an effect is what Safari refuses to start.
+- A tie plays **every** winner's anthem at the same time. That began as a bug
+  in v1 and the office decided it was the best part of the game, so it is
+  deliberate now. Do not turn it into a queue.
+- `game_players.status = 'dnp'` means "was at the table and never got a turn
+  because the box was shut". It is not "did not show up" — a player who was
+  picked and then leaves is removed from the game entirely.
 
-## v2 backlog (brainstormed, deliberately cut from v1)
+## Still to come
 
-- In-app dice roller (client-only component on the game screen)
-- Live spectator mode via Supabase Realtime (needs per-tap writes)
-- Walk-up music: 10-second intro clip when a player's turn starts
-- "Biggest choke" & nemesis head-to-head stats (pure SQL, no schema change)
-- Season resets + Elo-style rating
-- PWA manifest so the app installs to home screens
-- Edit/undo saved games (decide on an audit trail first)
-- Atomic `save_game()` plpgsql RPC instead of insert + compensating delete
-- Photo of the day (Supabase Storage) — history page becomes a scrapbook
-- Generated DB types via `supabase gen types typescript`
+- **Fika rota** — weekly buyer is last week's worst player among those not yet
+  picked this cycle; nobody repeats until everyone has had a turn.
+- **Cron + Teams** — a Monday digest and a weekday afternoon nudge, plus the
+  fika line on the winner card. `TEAMS_WEBHOOK_URL` is currently unset, so no
+  cards post at all; `scripts/cutover/set-teams-webhook.sh` tests a URL before
+  saving it.
+- **PWA** — installable, with the theme-coloured status bar.
+- **Generated DB types** — `supabase gen types typescript` replacing the
+  hand-written row shapes in `src/lib/types.ts`.
+- **A typed 0 should end the game** the way an empty board does; today only the
+  board triggers the instant win, though `game_results` counts both as a shut
+  box.
+- Deliberately not building: an in-app dice roller, or predict-the-winner.
