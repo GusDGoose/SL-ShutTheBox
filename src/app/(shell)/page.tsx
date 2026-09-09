@@ -150,6 +150,16 @@ export default async function Home() {
           )}
         </>
       )}
+
+      {/* The forgotten Friday, or the day the app was down: a game that was
+          played on the real box and never entered. Recording it after the
+          fact keeps the history honest and lands in the audit trail. */}
+      <Link
+        href="/record"
+        className="self-start text-sm text-ink-muted underline hover:text-ink"
+      >
+        Played without the app? Record a game →
+      </Link>
     </main>
   );
 }

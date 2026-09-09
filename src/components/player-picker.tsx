@@ -29,8 +29,11 @@ export function PlayerPicker({
                 : "border-line hover:border-brass/50"
             }`}
           >
+            {/* The turn number. bg-background/text-foreground were v1 tokens
+                that F1 removed, so this badge had been rendering with no
+                background at all — and the number is the whole point of it. */}
             {picked && (
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-background text-xs font-bold text-foreground">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-surface text-xs font-bold text-ink">
                 {idx + 1}
               </span>
             )}
