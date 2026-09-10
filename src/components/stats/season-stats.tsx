@@ -248,13 +248,9 @@ export async function SeasonStats({
         </>
       )}
 
+      {/* All-time and History are pills in the switcher at the top of this
+          page now, so repeating them down here is just noise. */}
       <div className="flex flex-wrap gap-3">
-        <Link href="/stats/all-time" className={buttonClass("secondary")}>
-          All-time &amp; hall of fame →
-        </Link>
-        <Link href="/history" className={buttonClass("ghost")}>
-          Browse history
-        </Link>
         <Link href="/rules" className={buttonClass("ghost")}>
           House rules
         </Link>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, Dice5, Trophy, Users } from "lucide-react";
+import { CalendarDays, Dice5, Ellipsis, Trophy, Users } from "lucide-react";
 import { isTabActive, TABS, type TabId } from "@/lib/nav";
 
 // Emoji carry meaning in this app (📦 shut, 👑 won, 🔥 streak); chrome uses
@@ -13,6 +13,7 @@ const ICONS: Record<TabId, typeof Dice5> = {
   play: Dice5,
   stats: Trophy,
   players: Users,
+  more: Ellipsis,
 };
 
 export function NavTabs() {
@@ -24,7 +25,7 @@ export function NavTabs() {
     // DOM for a screen reader to read twice.
     <nav
       aria-label="Main"
-      className="wood fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-black/25 pb-[env(safe-area-inset-bottom)] md:static md:z-auto md:justify-end md:gap-1 md:border-0 md:bg-none md:pb-0 md:[background-image:none]"
+      className="wood fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-black/25 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:static md:z-auto md:justify-end md:gap-1 md:border-0 md:bg-none md:p-0 md:[background-image:none]"
     >
       {TABS.map((tab) => {
         const active = isTabActive(pathname, tab);
@@ -34,7 +35,7 @@ export function NavTabs() {
             key={tab.id}
             href={tab.href}
             aria-current={active ? "page" : undefined}
-            className={`group flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-xs font-semibold transition-colors md:min-h-11 md:flex-none md:flex-row md:gap-2 md:px-3 md:text-sm ${
+            className={`group flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 px-0.5 text-[0.6875rem] font-semibold leading-none transition-colors md:min-h-11 md:flex-none md:flex-row md:gap-2 md:px-3 md:text-sm ${
               active
                 ? "text-ivory"
                 : "text-ivory/60 hover:text-ivory/90"

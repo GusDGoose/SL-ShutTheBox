@@ -8,6 +8,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { dayLabel, stockholmToday } from "@/lib/dates";
 import { isMonth, monthLabel, monthOf, shiftMonth } from "@/lib/months";
 import { getHistoryMonth, getHistoryMonths } from "@/lib/queries/history";
+import { getSeasonForDate, getSeasons } from "@/lib/queries/stats";
+import { SeasonNav } from "@/components/stats/season-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -33,9 +35,11 @@ export default async function HistoryMonthPage({
   const { month } = await params;
   if (!isMonth(month)) notFound();
 
-  const [data, months] = await Promise.all([
+  const [data, months, seasons, current] = await Promise.all([
     getHistoryMonth(month),
     getHistoryMonths(),
+    getSeasons(),
+    getSeasonForDate(stockholmToday()),
   ]);
   const thisMonth = monthOf(stockholmToday());
 
@@ -55,11 +59,14 @@ export default async function HistoryMonthPage({
     .filter((g) => g.photo_path)
     .map((g) => ({ gameId: g.id, playedOn: g.played_on }));
 
+  // min-w-0 + truncate: two long month names either side of the heading is
+  // more than a 320px phone can hold, and an overflowing row pans the page.
   const navLink =
-    "inline-flex min-h-11 items-center gap-1 rounded-[var(--radius-control)] px-3 text-sm font-semibold text-ink-muted hover:bg-surface-2 hover:text-ink";
+    "inline-flex min-h-11 min-w-0 items-center gap-1 truncate rounded-[var(--radius-control)] px-3 text-sm font-semibold text-ink-muted hover:bg-surface-2 hover:text-ink";
 
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 p-4 sm:p-6">
+      <SeasonNav seasons={seasons} currentId={current.id} active="history" />
       <nav
         aria-label="Month"
         className="flex items-center justify-between gap-2"

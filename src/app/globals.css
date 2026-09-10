@@ -159,6 +159,14 @@
   html {
     background: var(--color-canvas);
     color: var(--color-ink);
+    /* [concept: overflow clip as a backstop] One element wider than the phone
+       — a long name in the header was the first — pans the ENTIRE page
+       sideways, tab rail and all, on every route. Nothing here is ever meant
+       to scroll horizontally at the document level: the wide things (stats
+       tables, the scrapbook) carry their own overflow-x-auto. `clip` rather
+       than `hidden` because hidden would make the viewport a scroll container
+       and break every `position: sticky` in the stats tables. */
+    overflow-x: clip;
   }
   body {
     min-height: 100dvh;

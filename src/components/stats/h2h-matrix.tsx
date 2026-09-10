@@ -26,7 +26,7 @@ export function H2HMatrix({
   const byPair = new Map(rows.map((r) => [`${r.a_id}:${r.b_id}`, r]));
 
   return (
-    <div className="overflow-x-auto rounded-[var(--radius-card)] border border-line bg-surface">
+    <div className="overflow-x-auto overscroll-x-contain rounded-[var(--radius-card)] border border-line bg-surface">
       <table className="w-full min-w-max border-collapse text-sm">
         <caption className="sr-only">
           Head to head record, read as wins–losses for the player named in each

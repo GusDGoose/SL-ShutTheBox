@@ -17,7 +17,7 @@ export function SeasonNav({
   seasons: SeasonWithRules[];
   /** The season being played right now — its link is "This season". */
   currentId: string;
-  /** Which pill is on: a season id, or "all-time". */
+  /** Which pill is on: a season id, "all-time", or "history". */
   active: string;
 }) {
   const pill = (on: boolean) =>
@@ -59,6 +59,17 @@ export function SeasonNav({
         aria-current={active === "all-time" ? "page" : undefined}
       >
         All-time
+      </Link>
+      {/* History rides in the same switcher, and the switcher rides on the
+          history pages too. It used to be a lone "Browse history →" at the
+          bottom of one stats page, which is a poor way to learn that four
+          months of games exist. */}
+      <Link
+        href="/history"
+        className={pill(active === "history")}
+        aria-current={active === "history" ? "page" : undefined}
+      >
+        History
       </Link>
     </nav>
   );

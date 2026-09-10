@@ -21,7 +21,7 @@ export function PhotoStrip({
   return (
     <section className="flex flex-col gap-2">
       <h2 className="eyebrow">{title}</h2>
-      <ul className="flex gap-4 overflow-x-auto px-1 pb-3 pt-2">
+      <ul className="flex gap-4 overflow-x-auto overscroll-x-contain px-1 pb-3 pt-2">
         {photos.map((photo, i) => (
           <li key={photo.gameId} className="shrink-0">
             <Link

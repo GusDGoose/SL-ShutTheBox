@@ -30,7 +30,7 @@ export function StatsTable({
     : "";
 
   return (
-    <div className="overflow-x-auto rounded-[var(--radius-card)] border border-line bg-surface">
+    <div className="overflow-x-auto overscroll-x-contain rounded-[var(--radius-card)] border border-line bg-surface">
       <table className="w-full min-w-max border-collapse text-sm">
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead className={sticky}>

@@ -23,13 +23,15 @@ export async function IdentityChip() {
   return (
     <Link
       href="/whoami"
-      className="flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-ivory/80 transition-colors hover:text-ivory"
+      className="flex min-h-11 min-w-0 items-center gap-2 rounded-full px-3 text-sm text-ivory/80 transition-colors hover:text-ivory"
       title={`You are ${player.name} on this device`}
     >
-      <span aria-hidden className="text-lg">
+      <span aria-hidden className="shrink-0 text-lg">
         {player.emoji}
       </span>
-      <span className="font-semibold">{player.name}</span>
+      {/* Truncated, not wrapped: the header is one line, and a name long
+          enough to wrap is long enough to have pushed the page sideways. */}
+      <span className="truncate font-semibold">{player.name}</span>
       <span className="hidden text-ivory/60 sm:inline">· switch</span>
     </Link>
   );
