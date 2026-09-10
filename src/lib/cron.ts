@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase";
+import type { Json } from "@/lib/database.types";
 
 /**
  * [concept: idempotency guard] Vercel Hobby fires a cron anywhere inside its
@@ -38,7 +39,7 @@ export async function recordCronResult(
 ): Promise<void> {
   await supabaseAdmin()
     .from("cron_runs")
-    .update({ result })
+    .update({ result: result as Json })
     .eq("job", job)
     .eq("run_date", runDate);
 }

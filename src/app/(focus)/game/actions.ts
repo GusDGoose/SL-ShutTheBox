@@ -5,6 +5,7 @@ import { hasPin, requireSession, SessionError } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-errors";
 import { parseSnapshot, type LiveSnapshot } from "@/lib/live";
 import { supabaseAdmin } from "@/lib/supabase";
+import { rpc, type RpcArgs, type RpcName } from "@/lib/db-rows";
 import { announceWinners } from "@/lib/teams";
 
 /**
@@ -58,11 +59,11 @@ async function withPin<T = object>(
 type SnapshotResult = ActionResult<{ snapshot: LiveSnapshot }>;
 
 /** Calls an RPC that returns a snapshot, and maps a database refusal to copy. */
-async function rpcSnapshot(
-  fn: string,
-  args: Record<string, unknown>,
+async function rpcSnapshot<K extends RpcName>(
+  fn: K,
+  args: { [P in keyof RpcArgs<K>]: RpcArgs<K>[P] | null },
 ): Promise<SnapshotResult> {
-  const { data, error } = await supabaseAdmin().rpc(fn, args);
+  const { data, error } = await rpc(supabaseAdmin(), fn, args);
   if (error) return { ok: false, error: describeDbError(error) };
   return { ok: true, snapshot: parseSnapshot(data) };
 }
@@ -149,11 +150,11 @@ export async function claimScorekeeper(gameId: string): Promise<SnapshotResult> 
  * STB codes the rest of the flow uses for quite different things. For these
  * two, the database's own sentence is the better copy.
  */
-async function rpcSnapshotVerbatim(
-  name: "join_game" | "leave_game",
-  args: Record<string, unknown>,
+async function rpcSnapshotVerbatim<K extends "join_game" | "leave_game">(
+  name: K,
+  args: { [P in keyof RpcArgs<K>]: RpcArgs<K>[P] | null },
 ): Promise<SnapshotResult> {
-  const { data, error } = await supabaseAdmin().rpc(name, args);
+  const { data, error } = await rpc(supabaseAdmin(), name, args);
   if (error) {
     const own = error.code?.startsWith("STB") ? error.message : null;
     return {
@@ -199,7 +200,7 @@ export async function abandonGame(
   note?: string,
 ): Promise<ActionResult> {
   return withSession(async (actorId) => {
-    const { error } = await supabaseAdmin().rpc("abandon_game", {
+    const { error } = await rpc(supabaseAdmin(), "abandon_game", {
       p_actor: actorId,
       p_game_id: gameId,
       p_note: note ?? null,

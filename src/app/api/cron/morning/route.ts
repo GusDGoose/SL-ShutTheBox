@@ -59,9 +59,11 @@ export async function GET(request: Request) {
   if (isMonday) {
     // Draw first: the digest carries the "who buys fika" line, so drawing
     // afterwards would post a digest that says nobody is buying.
+    // p_actor is `default null` in SQL — the cron is not a person — but the
+    // generator types every argument as required and non-null.
     const { data: duty, error: drawError } = await sb.rpc("draw_fika", {
       p_week_start: today,
-      p_actor: null,
+      p_actor: undefined,
     });
     if (drawError) {
       // A roster with nobody on it is not a reason to skip the digest.
@@ -119,7 +121,7 @@ async function lastWeek(today: string) {
       .lte("played_on", to),
     sb
       .from("player_achievements")
-      .select("player_id, key, earned_at")
+      .select("player_id, achievement_key, earned_at")
       .gte("earned_at", `${from}T00:00:00Z`)
       .lte("earned_at", `${to}T23:59:59Z`),
     // daily_winners has a row per winner per day, so counting it would call a
@@ -170,7 +172,11 @@ async function lastWeek(today: string) {
 
   // Achievement keys are slugs; the card reads better with the display name.
   const keys = [
-    ...new Set(((badgesRes.data ?? []) as { key: string }[]).map((b) => b.key)),
+    ...new Set(
+      ((badgesRes.data ?? []) as { achievement_key: string }[]).map(
+        (b) => b.achievement_key,
+      ),
+    ),
   ];
   const { data: catalog } = keys.length
     ? await sb.from("achievements").select("key, name").in("key", keys)
@@ -189,8 +195,11 @@ async function lastWeek(today: string) {
       ? { ...named(topStreak.player_id), days: topStreak.current_streak }
       : null,
     topGainer: topGain ? { ...named(topGain[0]), delta: topGain[1] } : null,
-    badges: ((badgesRes.data ?? []) as { player_id: string; key: string }[]).map(
-      (b) => ({ ...named(b.player_id), badge: badgeName.get(b.key) ?? b.key }),
-    ),
+    badges: (
+      (badgesRes.data ?? []) as { player_id: string; achievement_key: string }[]
+    ).map((b) => ({
+      ...named(b.player_id),
+      badge: badgeName.get(b.achievement_key) ?? b.achievement_key,
+    })),
   };
 }

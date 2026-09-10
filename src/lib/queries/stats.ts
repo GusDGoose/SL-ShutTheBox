@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { supabaseAdmin } from "@/lib/supabase";
+import { unwrapRows } from "@/lib/db-rows";
 import { parseRuleset, type Ruleset } from "@/lib/rules";
 import type { Player, PlayerRatingRow, PlayerStatsRow, PlayerStreakRow } from "@/lib/types";
 
@@ -71,10 +72,6 @@ export type ChokeRow = {
   was_favourite: boolean;
 };
 
-function unwrap<T>(res: { data: T | null; error: { message: string } | null }): T {
-  if (res.error) throw new Error(res.error.message);
-  return (res.data ?? []) as T;
-}
 
 /** Every season, newest first, with its ruleset parsed. */
 export const getSeasons = cache(async (): Promise<SeasonWithRules[]> => {
@@ -84,12 +81,12 @@ export const getSeasons = cache(async (): Promise<SeasonWithRules[]> => {
     sb.from("rulesets").select("id, rules"),
   ]);
   const rules = new Map(
-    unwrap<{ id: string; rules: unknown }[]>(rulesets).map((r) => [
+    unwrapRows<{ id: string; rules: unknown }[]>(rulesets).map((r) => [
       r.id,
       parseRuleset(r.rules),
     ]),
   );
-  return unwrap<SeasonRow[]>(seasons).map((s) => ({
+  return unwrapRows<SeasonRow[]>(seasons).map((s) => ({
     ...s,
     rules: rules.get(s.ruleset_id)!,
   }));
@@ -110,7 +107,7 @@ export const getSeasonForDate = cache(
 
 export const getRoster = cache(async (): Promise<Player[]> => {
   const sb = supabaseAdmin();
-  return unwrap<Player[]>(
+  return unwrapRows<Player[]>(
     await sb.from("players").select("*").order("created_at"),
   );
 });
@@ -118,7 +115,7 @@ export const getRoster = cache(async (): Promise<Player[]> => {
 export const getStandings = cache(
   async (seasonId: string): Promise<StandingRow[]> => {
     const sb = supabaseAdmin();
-    return unwrap<StandingRow[]>(
+    return unwrapRows<StandingRow[]>(
       await sb
         .from("season_standings")
         .select("*")
@@ -130,7 +127,7 @@ export const getStandings = cache(
 
 export const getRatings = cache(async (): Promise<PlayerRatingRow[]> => {
   const sb = supabaseAdmin();
-  return unwrap<PlayerRatingRow[]>(
+  return unwrapRows<PlayerRatingRow[]>(
     await sb
       .from("player_ratings")
       .select("*")
@@ -151,7 +148,7 @@ export const getRecentRatingHistory = cache(
     const since = new Date(Date.now() - 90 * 86_400_000)
       .toISOString()
       .slice(0, 10);
-    return unwrap<RatingHistoryRow[]>(
+    return unwrapRows<RatingHistoryRow[]>(
       await sb
         .from("rating_history")
         .select("player_id, played_on, seq, rating_after, delta")
@@ -185,7 +182,7 @@ export function ratingMovement(history: RatingHistoryRow[]) {
 
 export const getAllTimeStats = cache(async (): Promise<PlayerStatsRow[]> => {
   const sb = supabaseAdmin();
-  return unwrap<PlayerStatsRow[]>(
+  return unwrapRows<PlayerStatsRow[]>(
     await sb
       .from("player_stats")
       .select("*")
@@ -196,14 +193,14 @@ export const getAllTimeStats = cache(async (): Promise<PlayerStatsRow[]> => {
 
 export const getStreaks = cache(async (): Promise<PlayerStreakRow[]> => {
   const sb = supabaseAdmin();
-  return unwrap<PlayerStreakRow[]>(
+  return unwrapRows<PlayerStreakRow[]>(
     await sb.from("player_streaks").select("*"),
   );
 });
 
 export const getTrends = cache(async (): Promise<TrendRow[]> => {
   const sb = supabaseAdmin();
-  return unwrap<TrendRow[]>(
+  return unwrapRows<TrendRow[]>(
     await sb.from("player_trends").select("*").order("month"),
   );
 });
@@ -212,7 +209,7 @@ export const getTrends = cache(async (): Promise<TrendRow[]> => {
 export const getScoreDistribution = cache(
   async (): Promise<{ score: number; n: number }[]> => {
     const sb = supabaseAdmin();
-    const rows = unwrap<{ score: number; n: number }[]>(
+    const rows = unwrapRows<{ score: number; n: number }[]>(
       await sb.from("score_distribution").select("score, n"),
     );
     // The view is per player per ruleset; the page wants one histogram.
@@ -234,7 +231,7 @@ export const getScoreDistribution = cache(
 export const getSeasonDistribution = cache(
   async (seasonId: string): Promise<{ score: number; n: number }[]> => {
     const sb = supabaseAdmin();
-    const rows = unwrap<{ score: number }[]>(
+    const rows = unwrapRows<{ score: number }[]>(
       await sb.from("game_results").select("score").eq("season_id", seasonId),
     );
     const totals = new Map<number, number>();
@@ -247,7 +244,7 @@ export const getSeasonDistribution = cache(
 
 export const getHallOfFame = cache(async () => {
   const sb = supabaseAdmin();
-  return unwrap<
+  return unwrapRows<
     {
       key: string;
       player_id: string;
@@ -260,7 +257,7 @@ export const getHallOfFame = cache(async () => {
 
 export const getHeadToHead = cache(async () => {
   const sb = supabaseAdmin();
-  return unwrap<
+  return unwrapRows<
     {
       a_id: string;
       b_id: string;
@@ -274,7 +271,7 @@ export const getHeadToHead = cache(async () => {
 
 export const getNemeses = cache(async () => {
   const sb = supabaseAdmin();
-  return unwrap<
+  return unwrapRows<
     {
       player_id: string;
       nemesis_name: string;
@@ -289,14 +286,14 @@ export const getNemeses = cache(async () => {
 
 export const getBiggestChokes = cache(async (): Promise<ChokeRow[]> => {
   const sb = supabaseAdmin();
-  return unwrap<ChokeRow[]>(
+  return unwrapRows<ChokeRow[]>(
     await sb.from("biggest_chokes").select("*").order("delta").limit(5),
   );
 });
 
 export const getMonthlyChampions = cache(async () => {
   const sb = supabaseAdmin();
-  return unwrap<
+  return unwrapRows<
     {
       month: string;
       player_id: string;
@@ -314,7 +311,7 @@ export const getMonthlyChampions = cache(async () => {
 
 export const getSeasonChampions = cache(async () => {
   const sb = supabaseAdmin();
-  return unwrap<
+  return unwrapRows<
     {
       season_id: string;
       season_number: number;

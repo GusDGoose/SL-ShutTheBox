@@ -3,6 +3,7 @@ import Link from "next/link";
 import { BookOpen, ChevronRight, Coffee, Images, PencilLine } from "lucide-react";
 import { AppearanceControls } from "@/components/shell/theme-picker";
 import { SoundSetting } from "@/components/shell/sound-setting";
+import { InstallHint } from "@/components/shell/install-hint";
 import { buttonClass } from "@/components/ui/button";
 import { getIdentity } from "@/lib/auth";
 import { stockholmToday } from "@/lib/dates";
@@ -88,6 +89,8 @@ export default async function MorePage() {
       <AppearanceControls initialTheme={theme} initialMode={mode} />
 
       <SoundSetting />
+
+      <InstallHint />
 
       <section className="flex flex-col gap-3">
         <h2 className="eyebrow">You</h2>

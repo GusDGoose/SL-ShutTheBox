@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireSession, SessionError } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-errors";
 import { supabaseAdmin } from "@/lib/supabase";
+import { rpc } from "@/lib/db-rows";
 import type { ActionResult } from "@/app/(focus)/game/actions";
 
 /**
@@ -23,7 +24,7 @@ export async function planSeason(
     const { data: start, error: startError } = await sb.rpc("next_quarter_start");
     if (startError) return { ok: false, error: describeDbError(startError) };
 
-    const { error } = await sb.rpc("plan_season", {
+    const { error } = await rpc(sb, "plan_season", {
       p_actor: player.id,
       p_quarter_start: start,
       p_ruleset_id: rulesetId,

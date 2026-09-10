@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { supabaseAdmin } from "@/lib/supabase";
+import { unwrapRows } from "@/lib/db-rows";
 import { monthBounds, monthOf } from "@/lib/months";
 import { parseRuleset, tilesOf } from "@/lib/rules";
 import type {
@@ -20,10 +21,6 @@ import type { RatingHistoryRow } from "@/lib/queries/stats";
  * `React.cache`d so a page can ask twice and pay once.
  */
 
-function unwrap<T>(res: { data: T | null; error: { message: string } | null }): T {
-  if (res.error) throw new Error(res.error.message);
-  return (res.data ?? []) as T;
-}
 
 /** A row of game_results as 0007 defines it — types.ts still has v1's shape. */
 export type ResultRow = {
@@ -62,7 +59,7 @@ export const getHistoryMonths = cache(async (): Promise<string[]> => {
   const sb = supabaseAdmin();
   // monthly_champions has a row per month that was played, which is exactly
   // the list — and stays a handful of rows however long the history gets.
-  const rows = unwrap<{ month: string }[]>(
+  const rows = unwrapRows<{ month: string }[]>(
     await sb.from("monthly_champions").select("month"),
   );
   return [...new Set(rows.map((r) => monthOf(r.month)))].sort().reverse();
@@ -76,7 +73,7 @@ export const getHistoryMonth = cache(
 
     // Bounded by the month, so api.max_rows (1000) can never bite: a month of
     // daily office play is a few dozen games and a few hundred result rows.
-    const games = unwrap<
+    const games = unwrapRows<
       { id: string; played_on: string; photo_path: string | null; rules: unknown }[]
     >(
       await sb
@@ -91,14 +88,14 @@ export const getHistoryMonth = cache(
       return { month, games: [], players: new Map(), dayWins: new Map(), shutBoxes: 0 };
     }
 
-    const rows = unwrap<ResultRow[]>(
+    const rows = unwrapRows<ResultRow[]>(
       await sb
         .from("game_results")
         .select("*")
         .in("game_id", games.map((g) => g.id))
         .order("finish_position"),
     );
-    const roster = unwrap<Player[]>(
+    const roster = unwrapRows<Player[]>(
       await sb
         .from("players")
         .select("*")
@@ -214,19 +211,19 @@ export const getPlayerProfile = cache(
           .order("played_on"),
       ]);
 
-    const allRatings = unwrap<PlayerRatingRow[]>(ratings).filter((r) => r.rated_games > 0);
+    const allRatings = unwrapRows<PlayerRatingRow[]>(ratings).filter((r) => r.rated_games > 0);
     const rating = allRatings.find((r) => r.player_id === playerId) ?? null;
     const ratingRank = rating ? allRatings.indexOf(rating) + 1 : null;
 
-    const catalogRows = unwrap<AchievementRow[]>(catalog);
+    const catalogRows = unwrapRows<AchievementRow[]>(catalog);
     const byKey = new Map(catalogRows.map((a) => [a.key, a]));
-    const earnedRows = unwrap<
+    const earnedRows = unwrapRows<
       { achievement_key: string; earned_at: string; game_id: string | null; times: number }[]
     >(earned);
 
-    const recentRows = unwrap<ResultRow[]>(recent);
+    const recentRows = unwrapRows<ResultRow[]>(recent);
     const photos = recentRows.length
-      ? unwrap<{ id: string; photo_path: string | null }[]>(
+      ? unwrapRows<{ id: string; photo_path: string | null }[]>(
           await sb
             .from("games_valid")
             .select("id, photo_path")
@@ -236,7 +233,7 @@ export const getPlayerProfile = cache(
     const photoByGame = new Map(photos.map((g) => [g.id, g.photo_path]));
 
     // The favourite victim needs a name; look it up only if there is one.
-    const victimRow = unwrap<{ b_id: string; meetings: number; a_wins: number; b_wins: number }[]>(h2h)[0];
+    const victimRow = unwrapRows<{ b_id: string; meetings: number; a_wins: number; b_wins: number }[]>(h2h)[0];
     let victim: Profile["victim"] = null;
     if (victimRow && victimRow.a_wins > victimRow.b_wins) {
       const { data } = await sb.from("players").select("name, emoji").eq("id", victimRow.b_id).maybeSingle();
@@ -250,7 +247,7 @@ export const getPlayerProfile = cache(
 
     // One entry per day: winning either game of a two-game day is one won day.
     const days = new Map<string, boolean>();
-    for (const r of unwrap<{ played_on: string; is_winner: boolean }[]>(form)) {
+    for (const r of unwrapRows<{ played_on: string; is_winner: boolean }[]>(form)) {
       days.set(r.played_on, (days.get(r.played_on) ?? false) || r.is_winner);
     }
 
@@ -260,7 +257,7 @@ export const getPlayerProfile = cache(
       streak: (streaks.data as PlayerStreakRow | null) ?? null,
       rating,
       ratingRank,
-      ratingHistory: unwrap<RatingHistoryRow[]>(history),
+      ratingHistory: unwrapRows<RatingHistoryRow[]>(history),
       nemesis: nemesisRow
         ? {
             name: nemesisRow.nemesis_name,

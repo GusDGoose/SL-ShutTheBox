@@ -5,6 +5,7 @@ import { requireSession, SessionError } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-errors";
 import { checkUpload, photoObjectPath } from "@/lib/storage-paths";
 import { supabaseAdmin } from "@/lib/supabase";
+import { rpc } from "@/lib/db-rows";
 import type { ActionResult } from "@/app/(focus)/game/actions";
 
 /**
@@ -58,7 +59,7 @@ export async function editGame(
   note?: string,
 ): Promise<ActionResult> {
   return withSession(async (actorId) => {
-    const { error } = await supabaseAdmin().rpc("edit_game", {
+    const { error } = await rpc(supabaseAdmin(), "edit_game", {
       p_actor: actorId,
       p_game_id: gameId,
       p_played_on: playedOn,
@@ -76,7 +77,7 @@ export async function deleteGame(
   reason?: string,
 ): Promise<ActionResult> {
   return withSession(async (actorId) => {
-    const { error } = await supabaseAdmin().rpc("delete_game", {
+    const { error } = await rpc(supabaseAdmin(), "delete_game", {
       p_actor: actorId,
       p_game_id: gameId,
       p_reason: reason?.trim() || null,
@@ -154,7 +155,7 @@ export async function addManualGame(
   note?: string,
 ): Promise<ActionResult<{ gameId: string }>> {
   return withSession<{ gameId: string }>(async (actorId) => {
-    const { data, error } = await supabaseAdmin().rpc("add_manual_game", {
+    const { data, error } = await rpc(supabaseAdmin(), "add_manual_game", {
       p_actor: actorId,
       p_played_on: playedOn,
       p_results: toRows(results),
@@ -215,7 +216,7 @@ export async function uploadGamePhoto(
       await sb.storage.from("game-photos").remove([game.photo_path]);
     }
 
-    const { error } = await sb.rpc("set_game_photo", {
+    const { error } = await rpc(sb, "set_game_photo", {
       p_actor: actorId,
       p_game_id: gameId,
       p_path: path,
@@ -239,7 +240,7 @@ export async function clearGamePhoto(gameId: string): Promise<ActionResult> {
     const path = (data as { photo_path: string | null } | null)?.photo_path;
     if (!path) return { ok: true };
 
-    const { error } = await sb.rpc("set_game_photo", {
+    const { error } = await rpc(sb, "set_game_photo", {
       p_actor: actorId,
       p_game_id: gameId,
       p_path: null,

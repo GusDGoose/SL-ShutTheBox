@@ -41,7 +41,9 @@ export default async function RulesPage() {
   if (rulesetsRes.error) throw new Error(rulesetsRes.error.message);
 
   const seasons = (seasonsRes.data ?? []) as SeasonRow[];
-  const rulesets = (rulesetsRes.data ?? []) as RulesetRow[];
+  // rules is Json in the generated types; RulesetRow narrows it to the
+  // shape parseRuleset validates at the point of use.
+  const rulesets = (rulesetsRes.data ?? []) as unknown as RulesetRow[];
   const byId = new Map(rulesets.map((r) => [r.id, r]));
 
   const current = seasons.find((s) => s.id === seasonId);
