@@ -16,26 +16,57 @@ export type FikaDuty = {
 };
 
 /**
+ * [concept: the app and the schema move together — except when they cannot]
+ * Deploying this app before migration 0018 reaches production would take the
+ * HOME page down for the whole office, because Today reads the rota. The
+ * office network blocks Postgres, so the migration is a manual dashboard
+ * paste and the two cannot be made atomic.
+ *
+ * So getFikaCurrent answers with three states, not two: a duty, `null` for
+ * "drawn nothing yet" (offer the Draw button), and `undefined` for "this
+ * deployment has no rota" (show nothing at all — a Draw button that cannot
+ * work is worse than no card). Narrow on purpose: only the two codes that
+ * mean "that relation is not there" are swallowed, and only for this
+ * feature. Every other database error still throws, because a rota that
+ * silently shows nobody buying is exactly the bug worth seeing.
+ *
+ * Delete this once 0018 is applied everywhere.
+ */
+function relationMissing(error: { code?: string | null } | null): boolean {
+  // 42P01 = undefined_table from Postgres; PGRST205 = PostgREST's schema
+  // cache saying the same thing.
+  return error?.code === "42P01" || error?.code === "PGRST205";
+}
+
+/**
  * This week's duty, or null if nobody has drawn one yet.
  *
  * Deliberately a read, never a draw: the Monday cron draws, and a page render
  * must not have the side effect of picking who pays for cake.
  */
-export const getFikaCurrent = cache(async (): Promise<FikaDuty | null> => {
-  const { data, error } = await supabaseAdmin()
-    .from("fika_current")
-    .select("*")
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return (data as FikaDuty | null) ?? null;
-});
+export const getFikaCurrent = cache(
+  async (): Promise<FikaDuty | null | undefined> => {
+    const { data, error } = await supabaseAdmin()
+      .from("fika_current")
+      .select("*")
+      .maybeSingle();
+    if (error) {
+      if (relationMissing(error)) return undefined;
+      throw new Error(error.message);
+    }
+    return (data as FikaDuty | null) ?? null;
+  },
+);
 
 /** How many times each player has bought, keyed by player id. */
 export const getFikaTally = cache(async (): Promise<Map<string, number>> => {
   const { data, error } = await supabaseAdmin()
     .from("fika_tally")
     .select("player_id, duties");
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (relationMissing(error)) return new Map();
+    throw new Error(error.message);
+  }
   return new Map(
     ((data ?? []) as { player_id: string; duties: number }[]).map((r) => [
       r.player_id,
@@ -62,7 +93,10 @@ export const getFikaHistory = cache(
       .select("id, week_start, player_id, reason, skipped_at")
       .order("week_start", { ascending: false })
       .limit(limit);
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (relationMissing(error)) return [];
+      throw new Error(error.message);
+    }
 
     const rows = (data ?? []) as {
       id: string;

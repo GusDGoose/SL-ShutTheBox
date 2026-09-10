@@ -154,8 +154,12 @@ export default async function Home() {
       )}
 
       {/* Who owes cake. It sits below the games because on most days the
-          game is the news and the rota is the reminder. */}
-      <FikaCard duty={fika} weekStart={isoMonday(today)} canAct={me !== null} />
+          game is the news and the rota is the reminder. Undefined means this
+          deployment is running ahead of migration 0018 — show nothing rather
+          than a button that cannot work. */}
+      {fika !== undefined && (
+        <FikaCard duty={fika} weekStart={isoMonday(today)} canAct={me !== null} />
+      )}
 
       {/* The forgotten Friday, or the day the app was down: a game that was
           played on the real box and never entered. Recording it after the

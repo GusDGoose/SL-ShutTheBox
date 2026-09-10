@@ -28,7 +28,12 @@ export default async function FikaPage() {
         </p>
       </div>
 
-      <FikaCard duty={duty} weekStart={weekStart} detailed canAct={me !== null} />
+      <FikaCard
+        duty={duty ?? null}
+        weekStart={weekStart}
+        detailed
+        canAct={me !== null}
+      />
 
       {history.length > 0 && (
         <section className="flex flex-col gap-3">
