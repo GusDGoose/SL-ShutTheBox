@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 PENDING=("$@")
-if [ ${#PENDING[@]} -eq 0 ]; then PENDING=(0015 0016); fi
+if [ ${#PENDING[@]} -eq 0 ]; then PENDING=(0018 0019); fi
 
 OUT="scripts/cutover/cutover_consolidated.sql"
 

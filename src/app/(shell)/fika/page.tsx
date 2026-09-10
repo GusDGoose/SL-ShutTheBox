@@ -37,14 +37,19 @@ export default async function FikaPage() {
             {history.map((h) => (
               <li
                 key={h.id}
-                className={`flex flex-wrap items-center gap-3 rounded-[var(--radius-control)] border border-line px-4 py-3 text-sm ${
-                  h.skipped ? "opacity-60" : ""
-                }`}
+                // Not opacity: dimming the whole row took the muted text to
+                // 2.57:1. A skipped week is marked by struck-through text and
+                // the word "skipped", which also survives being colour-blind.
+                className="flex flex-wrap items-center gap-3 rounded-[var(--radius-control)] border border-line px-4 py-3 text-sm"
               >
                 <span className="tabular-nums text-ink-muted">
                   w/c {h.week_start}
                 </span>
-                <span className="min-w-0 flex-1 truncate font-semibold">
+                <span
+                  className={`min-w-0 flex-1 truncate font-semibold ${
+                    h.skipped ? "line-through decoration-2" : ""
+                  }`}
+                >
                   {h.emoji} {h.name}
                 </span>
                 {h.skipped ? (

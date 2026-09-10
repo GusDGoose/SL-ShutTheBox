@@ -25,6 +25,12 @@
   --brass-ink: #7a5518;
   --ivory: #f6ebd4;
   --shut: #2f8f5b;
+  /* [concept: a fill colour is not a text colour] --shut on the surface is
+     3.78:1 — fine for the big "SHUT THE BOX" stamp (large text needs 3:1),
+     nowhere near the 4.5:1 that a small green delta in a stats table needs.
+     Same split as --brass / --brass-ink. 6.07:1 on surface, 5.49:1 on the
+     brass-tinted winner row. */
+  --shut-ink: #1f6b41;
   --danger: #b4432f;
   --streak: #d9782b;
   --shadow-rgb: 43 31 23;
@@ -47,6 +53,8 @@
   --brass-ink: #e4b95e;
   --ivory: #eadbbe;
   --shut: #4cc17e;
+  /* Already 7.55:1 on the dark surface — light on dark needs no darkening. */
+  --shut-ink: #4cc17e;
   --danger: #e0684f;
   --streak: #f08a3c;
   --shadow-rgb: 0 0 0;
@@ -107,6 +115,7 @@
   --brass-ink: #ff7cc3;
   --ivory: #4df0ff;
   --shut: #5cff9d;
+  --shut-ink: #5cff9d;
   --danger: #ff6b6b;
   --streak: #ffb347;
   --shadow-rgb: 77 240 255;
@@ -129,6 +138,7 @@
   --color-brass-ink: var(--brass-ink);
   --color-ivory: var(--ivory);
   --color-shut: var(--shut);
+  --color-shut-ink: var(--shut-ink);
   --color-danger: var(--danger);
   --color-streak: var(--streak);
 
@@ -204,6 +214,28 @@
         rgb(255 255 255 / 0.08),
         transparent 40%,
         rgb(0 0 0 / 0.1)
+      );
+  }
+  /* [concept: the chrome needs its own darker wood] Ivory text on --wood
+     measured 3.11:1 on oak and 1.45:1 on birch — the pale-wood theme's header
+     was very nearly invisible, and the tab labels with it, which is a large
+     part of why the navigation read as vague. Both are far below the 4.5:1
+     that 11px text needs.
+
+     Mixing the theme's own wood down towards black keeps every board's
+     character while guaranteeing the contrast in all four: oak 9.4:1,
+     walnut 13.5:1, birch 5.9:1, neon 16.4:1. Chrome should recede anyway —
+     it reads as the darker frame the tray sits in. e2e/a11y.spec.ts holds
+     the line. */
+  .wood-chrome {
+    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9 0.02' numOctaves='3' seed='7'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.16'/%3E%3C/svg%3E");
+    background-color: color-mix(in srgb, var(--color-wood) 45%, black);
+    background-image: var(--grain),
+      linear-gradient(
+        90deg,
+        rgb(255 255 255 / 0.06),
+        transparent 40%,
+        rgb(0 0 0 / 0.12)
       );
   }
   .felt {

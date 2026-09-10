@@ -46,7 +46,14 @@ export default async function PinPage({
 
       <form action={verifyPin} className="flex flex-col items-center gap-3">
         <input type="hidden" name="next" value={next ?? "/"} />
+        {/* A placeholder is not a label: it disappears the moment you type,
+            and a screen reader announcing "PIN" only until the first digit
+            is worse than useless on the one field that gates the whole app. */}
+        <label htmlFor="pin" className="sr-only">
+          Team PIN
+        </label>
         <input
+          id="pin"
           name="pin"
           type="password"
           inputMode="numeric"

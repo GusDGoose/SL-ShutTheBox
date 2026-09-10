@@ -15,7 +15,7 @@ import {
 export default function ShellLayout({ children }: LayoutProps<"/">) {
   return (
     <>
-      <header className="wood flex items-center justify-between gap-4 border-b border-black/25 px-4 py-3 text-ivory md:px-6">
+      <header className="wood-chrome flex items-center justify-between gap-4 border-b border-black/25 px-4 py-3 text-ivory md:px-6">
         {/* min-w-0 on both halves: a flex child defaults to min-width:auto and
             refuses to shrink below its text, so a long player name in the chip
             pushed the header past the viewport and set the whole page

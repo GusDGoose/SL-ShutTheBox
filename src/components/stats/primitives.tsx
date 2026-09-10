@@ -70,7 +70,7 @@ export function Delta({
   const up = value > 0;
   return (
     <span
-      className={`tabular-nums ${up ? "text-shut" : "text-danger"}`}
+      className={`tabular-nums ${up ? "text-shut-ink" : "text-danger"}`}
     >
       <span aria-hidden>{up ? "▲" : "▼"}</span>{" "}
       {up ? "+" : "−"}

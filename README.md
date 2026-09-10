@@ -51,6 +51,15 @@ TypeScript. `0007_views.sql` is where the stats live.
 | `/history/[month]` | every game of a month, day by day, with the photo scrapbook |
 | `/players`, `/players/[id]` | the roster and each player's profile, badges and song clip |
 | `/rules` | the house rules, rendered from the season's ruleset |
+| `/fika` | who buys this week, why it is them, and everyone before |
+| `/more` | the rest of the app, plus board theme, sound and who this device is |
+
+Four tabs cover the everyday routes — Today, Play, Stats, Players — and
+**More** collects the rest. Every page inside the shell lights exactly one
+tab; `e2e/navigation.spec.ts` fails if one ever lights none, which is the
+state the app drifted into once already. `/settings` permanently redirects to
+`/more`. The board and the gates render in the `(focus)` group, which has no
+tab rail at all, so nothing competes with the game.
 
 ## Local development
 
@@ -65,9 +74,13 @@ npm run dev
 `npm run db:start` prints the local `API URL` and `service_role` key — put
 them in `.env.local` (copy `.env.example`) together with a `TEAM_PIN`.
 Useful: Supabase Studio runs at http://127.0.0.1:54323, and `npm run db:reset`
-rebuilds the DB from migrations + seed. (`npm run db:types` generates a typed
-client from the local schema, but the app does not use it yet — row shapes are
-still hand-written in `src/lib/types.ts`. Adopting it is on the list below.)
+rebuilds the DB from migrations + seed.
+
+**Regenerate `src/lib/database.types.ts` after every migration** with
+`npm run db:types`, and commit it — `supabaseAdmin()` is parameterised by it,
+so a renamed column becomes a compile error instead of an undefined at
+runtime. It is generated from the LOCAL database, so reset first if your
+local schema has drifted.
 
 Checks: `npm run lint`, `npm run typecheck`, `npm test` (vitest — pure modules
 in node, components in jsdom), `npm run db:test` (pgTAP tests for the SQL views
@@ -94,6 +107,10 @@ and functions; needs the local stack running), `npm run e2e` (Playwright).
      (**secret** — never expose, never prefix with `NEXT_PUBLIC_`)
    - `TEAM_PIN` — the office passcode
    - `APP_URL` — the deployed URL (for the Teams card button), optional
+   - `SESSION_SECRET` — a long random string; signs the PIN and identity
+     cookies. Without it the app fails closed and nobody gets past `/pin`.
+   - `CRON_SECRET` — a long random string; the bearer token the two cron
+     routes require.
    - `TEAMS_WEBHOOK_URL` — optional, see below
    Env var changes require a redeploy to take effect.
 3. **Teams announcement** (optional): in the Teams channel → ⋯ → Workflows →
@@ -259,19 +276,54 @@ a fresh project.
 - `game_players.status = 'dnp'` means "was at the table and never got a turn
   because the box was shut". It is not "did not show up" — a player who was
   picked and then leaves is removed from the game entirely.
+- Generated types mark **every view column nullable** — Postgres cannot prove
+  a computed column is NOT NULL. The hand-written row types in
+  `src/lib/queries/*` are the ones telling the truth; `unwrapRows` in
+  `src/lib/db-rows.ts` is the single documented place that asserts it. Same
+  for `default null` RPC parameters, which the generator types as required:
+  use the `rpc()` wrapper rather than casting at the call site.
+- Nothing may scroll horizontally at the document level. Wide things (stats
+  tables, the scrapbook) carry their own `overflow-x-auto`; `<html>` has
+  `overflow-x: clip` as a backstop, and `clip` matters — `hidden` would make
+  the viewport a scroll container and break every sticky column. The original
+  cause was a flex child in the header refusing to shrink below a long player
+  name, which panned the whole page on every route.
+- The manifest and icons are fetched by the browser **without cookies**, so
+  they must stay exempt in `src/proxy.ts`. Gated, they redirect to `/pin`, the
+  manifest fails to parse, and the app silently stops being installable.
+
+## The fika rota and the cron jobs
+
+One person buys fika each week. The rule is *worst last week*, but a cycle
+sits on top of it: nobody buys twice until everybody has bought once, so being
+worst decides the order within a cycle, not how often your turn comes round.
+"Worst" is the average normalised finish — `(finish_position - 1) /
+(participants - 1)` — so a last place out of six is not beaten by a last place
+out of three. A week nobody eligible played falls back to random and the card
+says so. Skipping keeps your place in the cycle but takes you out of that
+week.
+
+Two Vercel cron jobs drive it, both requiring `Authorization: Bearer
+$CRON_SECRET`:
+
+| | when | what |
+|---|---|---|
+| `/api/cron/morning` | 05:00 UTC, Mon–Fri | abandons games left running; **Mondays** also draws the rota and posts last week's digest |
+| `/api/cron/afternoon` | 12:00 UTC, Mon–Fri | if nobody has played yet, nudges the channel |
+
+Both take `?on=YYYY-MM-DD` to run as if it were that date — the recovery path
+for a Monday the cron missed, and the only way to exercise the Monday branch
+on a Thursday. One `cron_runs` row per (job, day) is the lock, so a re-run of
+a day that already ran is a no-op. Hobby fires anywhere inside the scheduled
+hour and gives no exactly-once guarantee, which is why the guard exists at
+all. Writing to the database daily also keeps the free Supabase project from
+pausing after seven idle days.
 
 ## Still to come
 
-- **Fika rota** — weekly buyer is last week's worst player among those not yet
-  picked this cycle; nobody repeats until everyone has had a turn.
-- **Cron + Teams** — a Monday digest and a weekday afternoon nudge, plus the
-  fika line on the winner card. `TEAMS_WEBHOOK_URL` is currently unset, so no
-  cards post at all; `scripts/cutover/set-teams-webhook.sh` tests a URL before
-  saving it.
-- **PWA** — installable, with the theme-coloured status bar.
-- **Generated DB types** — `supabase gen types typescript` replacing the
-  hand-written row shapes in `src/lib/types.ts`.
 - **A typed 0 should end the game** the way an empty board does; today only the
   board triggers the instant win, though `game_results` counts both as a shut
   box.
+- **`cacheComponents`** — the readers in `src/lib/queries/*` are shaped for
+  `'use cache'` and tags, but every route is still fully dynamic.
 - Deliberately not building: an in-app dice roller, or predict-the-winner.

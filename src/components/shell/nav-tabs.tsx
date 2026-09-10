@@ -25,7 +25,7 @@ export function NavTabs() {
     // DOM for a screen reader to read twice.
     <nav
       aria-label="Main"
-      className="wood fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-black/25 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:static md:z-auto md:justify-end md:gap-1 md:border-0 md:bg-none md:p-0 md:[background-image:none]"
+      className="wood-chrome fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-black/25 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] md:static md:z-auto md:justify-end md:gap-1 md:border-0 md:bg-none md:p-0 md:[background-image:none]"
     >
       {TABS.map((tab) => {
         const active = isTabActive(pathname, tab);
@@ -38,7 +38,7 @@ export function NavTabs() {
             className={`group flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 px-0.5 text-[0.6875rem] font-semibold leading-none transition-colors md:min-h-11 md:flex-none md:flex-row md:gap-2 md:px-3 md:text-sm ${
               active
                 ? "text-ivory"
-                : "text-ivory/60 hover:text-ivory/90"
+                : "text-ivory/85 hover:text-ivory"
             }`}
           >
             <span

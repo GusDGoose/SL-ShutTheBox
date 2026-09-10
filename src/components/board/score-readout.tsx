@@ -16,9 +16,18 @@ export function ScoreReadout({
   shut?: boolean;
   label?: string;
 }) {
+  const caption = label ?? scoreLabel(rules);
+
+  // role="status" so a screen reader hears the running total change as tiles
+  // go down, instead of the number silently updating behind them. It doubles
+  // as the handle the end-to-end test reads the score through.
   return (
-    <div className="flex flex-col gap-1">
-      <span className="eyebrow">{label ?? scoreLabel(rules)}</span>
+    <div
+      role="status"
+      aria-label={shut ? "The box is shut" : `${caption}: ${value}`}
+      className="flex flex-col gap-1"
+    >
+      <span className="eyebrow">{caption}</span>
       {shut ? (
         <span className="font-[family-name:var(--font-display)] text-4xl font-extrabold text-shut">
           SHUT THE BOX 📦

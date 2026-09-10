@@ -23,536 +23,345 @@ create table if not exists supabase_migrations.schema_migrations (
   name       text
 );
 
--- Applying: 0015 0016 0017
+-- Applying: 0018 0019
 
 
--- ======================= 0015_storage.sql =======================
+-- ======================= 0018_fika.sql =======================
 
--- Shut the Box — the two storage buckets.
+-- Shut the Box — the fika rota.
 --
--- game-photos: one photo of the day per game, taken on a phone and resized in
--- the browser to about a megabyte before it is uploaded (the bucket limit is a
--- backstop, not the budget). song-clips: a player's own MP3 for the crowning,
--- for anyone who would rather not depend on a YouTube embed.
+-- One person buys fika each week, and the office rule is that it is whoever
+-- played worst last week. Two things stop that being simply "the loser buys":
 --
--- Both are PRIVATE. Nothing in Storage is ever read through a public URL: the
--- server hands a phone a short-lived signed URL (/api/photo, /api/clip), and
--- the browser key can neither list nor fetch objects — storage.objects has row
--- level security and this migration deliberately adds NO policies for these
--- buckets. The service role bypasses RLS, which is all the server needs.
+--   * nobody repeats until everybody has had a turn. That is what a *cycle*
+--     is: it opens when the last one is exhausted and closes when every
+--     active player has bought once. Being worst decides the ORDER within a
+--     cycle, not how often your turn comes round;
+--   * "worst" has to survive different-sized games. A last place out of three
+--     is not the same as a last place out of six, so the score is the average
+--     normalised finish, (finish_position - 1) / (participants - 1) — 0 for a
+--     win, 1 for last, whatever the field size. Solo games are ignored: you
+--     cannot lose to nobody.
 --
--- [concept: idempotent seed] `on conflict do update` so re-running converges on
--- these settings instead of failing, the same way ruleset seeds behave.
--- Mirrored in supabase/config.toml so `db reset` creates them locally too.
-
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values
-  ('game-photos', 'game-photos', false, 1572864,
-   array['image/jpeg', 'image/webp', 'image/png']),          -- 1.5 MiB
-  ('song-clips',  'song-clips',  false, 4194304,
-   array['audio/mpeg', 'audio/mp4', 'audio/ogg'])            -- 4 MiB
-on conflict (id) do update
-  set public             = excluded.public,
-      file_size_limit    = excluded.file_size_limit,
-      allowed_mime_types = excluded.allowed_mime_types;
-
--- ---------------------------------------------------------------------------
--- Which object is the photo of the day
+-- Ties are broken at random, and a week where nobody eligible actually played
+-- falls back to a random eligible player, recorded as such so the card can be
+-- honest about it ("nobody eligible played last week").
 --
--- The upload itself goes straight to Storage from the server. This records
--- the result on the game — path, who, when — and puts the change in the audit
--- trail like every other change to a game. A null path takes the photo down.
--- ---------------------------------------------------------------------------
-create or replace function set_game_photo(
-  p_actor   uuid,
-  p_game_id uuid,
-  p_path    text
-) returns void language plpgsql volatile as $fn$
-declare
-  v_found   boolean;
-  v_deleted timestamptz;
-  v_before  jsonb;
-  v_after   jsonb;
-begin
-  select true, deleted_at into v_found, v_deleted
-    from games where id = p_game_id for update;
-  if v_found is null then
-    raise exception 'no such game' using errcode = 'STB03';
-  end if;
-  -- A deleted game is being examined, not decorated.
-  if v_deleted is not null then
-    raise exception 'that game is deleted' using errcode = 'STB03';
-  end if;
+-- Skipping (a holiday, an unlucky week) marks the duty skipped and redraws.
+-- The skipped player stays eligible in the cycle — they have not bought yet —
+-- but is excluded from this particular week, or the redraw would just pick
+-- them again.
 
-  select jsonb_build_object('photo_path', photo_path, 'photo_by', photo_by,
-                            'photo_at', photo_at)
-    into v_before from games where id = p_game_id;
+create table fika_cycles (
+  id         uuid primary key default gen_random_uuid(),
+  -- "The latest cycle" cannot be decided by started_on: a cycle that is
+  -- exhausted and restarted on the same day ties with its predecessor, and
+  -- the tiebreak would be random uuid order — which silently reopens the old
+  -- cycle and lets somebody buy twice. A sequence is the only honest order.
+  seq        bigint generated always as identity,
+  started_on date not null default stockholm_today()
+);
 
-  update games
-     set photo_path = p_path,
-         photo_by   = case when p_path is null then null else p_actor end,
-         photo_at   = case when p_path is null then null else now() end
-   where id = p_game_id;
+create table fika_duties (
+  id         uuid primary key default gen_random_uuid(),
+  -- The ISO Monday the duty belongs to. Constrained rather than trusted: a
+  -- duty drawn for a Wednesday would quietly split a week in two.
+  week_start date not null check (extract(isodow from week_start) = 1),
+  cycle_id   uuid not null references fika_cycles(id) on delete cascade,
+  player_id  uuid not null references players(id),
+  reason     text not null check (reason in ('worst_last_week', 'random_fallback')),
+  -- How the draw was decided, for the card: field size, score, who else was
+  -- in the running. Read by humans, never by a query.
+  detail     jsonb not null default '{}'::jsonb,
+  drawn_at   timestamptz not null default now(),
+  -- Null actor means the Monday cron drew it rather than a person.
+  drawn_by   uuid references players(id),
+  skipped_at timestamptz,
+  skipped_by uuid references players(id),
+  check ((skipped_at is null) = (skipped_by is null))
+);
 
-  select jsonb_build_object('photo_path', photo_path, 'photo_by', photo_by,
-                            'photo_at', photo_at)
-    into v_after from games where id = p_game_id;
+-- At most one duty standing per week. This is also what makes draw_fika
+-- idempotent: two crons firing at once, or a cron racing a person pressing
+-- "Redraw", and the second insert simply loses.
+create unique index fika_one_duty_per_week
+  on fika_duties (week_start)
+  where skipped_at is null;
 
-  insert into audit_log (actor_player_id, action, entity, entity_id,
-                         before, after, note)
-  values (p_actor, 'game.photo', 'game', p_game_id, v_before, v_after,
-          case when p_path is null then 'photo removed' else 'photo added' end);
-end
+create index fika_duties_cycle_idx on fika_duties (cycle_id);
+create index fika_duties_player_idx on fika_duties (player_id);
+
+alter table fika_cycles enable row level security;
+alter table fika_duties enable row level security;
+
+grant select, insert on fika_cycles to service_role;
+grant select, insert, update on fika_duties to service_role;
+
+-- The Monday of the week a date falls in. date_trunc('week') is already ISO
+-- (Monday-based) in Postgres; this exists so the intent is readable at the
+-- call sites and the cast lives in one place.
+create or replace function iso_monday(p_date date)
+returns date language sql immutable as $fn$
+  select date_trunc('week', p_date)::date;
 $fn$;
 
-revoke execute on function set_game_photo(uuid, uuid, text)
-  from public, anon, authenticated;
-grant execute on function set_game_photo(uuid, uuid, text) to service_role;
-
-
--- ======================= 0016_safeupdate.sql =======================
-
--- Shut the Box — every DELETE in a settler gets a WHERE clause.
---
--- Found 2026-09-09, the morning after Cutover A: crowning a game failed from
--- the app with `21000 DELETE requires a WHERE clause`, while the very same
--- finish_game() succeeded in psql, in the dashboard SQL editor and in every
--- pgTAP test. The API connection is the difference. Supabase gives the
--- `authenticator` role `session_preload_libraries = supautils, safeupdate`,
--- and safeupdate refuses any DELETE or UPDATE that has no WHERE clause — a
--- guard against the classic "forgot the WHERE" accident. pgTAP runs as
--- postgres, which is not even allowed to LOAD the library, so 226 green tests
--- could not see it.
---
--- recompute_ratings() and evaluate_achievements() both rebuild their table
--- from scratch and opened with a bare DELETE. finish_game, edit_game,
--- delete_game, restore_game, undo_game_change and add_manual_game all call
--- them, so every write path that resettles was broken from the app between
--- Cutover A and this migration. The bodies below are the 0008 and 0009
--- originals with exactly one change each: `where true`, which safeupdate
--- accepts and which means the same thing. supabase/tests/0016_safeupdate.sql
--- scans every function in `public` so a bare DELETE or UPDATE cannot come
--- back.
---
--- CREATE OR REPLACE keeps each function's owner and grants, so the revoke/
--- grant statements from 0008 and 0009 still hold.
-
-create or replace function recompute_ratings()
-returns void language plpgsql volatile as $fn$
+/**
+ * Draw the buyer for a week, or return the duty already standing for it.
+ *
+ * Returns the fika_duties row. Raises STB08 only when there is nobody at all
+ * to pick from — an empty or fully benched roster.
+ */
+create or replace function draw_fika(
+  p_week_start date,
+  p_actor      uuid default null
+) returns fika_duties language plpgsql volatile
+set search_path = public, pg_temp as $fn$
 declare
-  v_start   constant numeric := 1000;
-  v_k_new   constant integer := 64;   -- while a player is still being placed
-  v_k_settled constant integer := 32;
-  v_provisional constant integer := 10;
-
-  v_state   jsonb := '{}'::jsonb;     -- player_id -> { r: rating, n: games }
-  v_game    record;
-  v_seq     integer := 0;
-  v_players uuid[];
-  v_places  integer[];
-  v_m       integer;
-  i         integer;
-  j         integer;
-  v_id      uuid;
-  v_r_i     numeric;
-  v_r_j     numeric;
-  v_n_i     integer;
-  v_k       integer;
-  v_score   numeric;
-  v_expected numeric;
-  v_sum     numeric;
-  v_delta   numeric;
+  v_monday    date := iso_monday(p_week_start);
+  v_cycle     uuid;
+  v_eligible  uuid[];
+  v_pick      uuid;
+  v_reason    text;
+  v_detail    jsonb := '{}'::jsonb;
+  v_duty      fika_duties;
 begin
-  delete from rating_events where true;  -- safeupdate: see the header
-
-  for v_game in
-    select g.id, g.played_on
-      from games_valid g
-     order by g.played_on, g.finished_at, g.id
-  loop
-    -- finish_position already accounts for the ruleset's win direction and tie
-    -- policy, so the rating never needs to know which way round the game runs.
-    select array_agg(gr.player_id order by gr.player_id),
-           array_agg(gr.finish_position order by gr.player_id)
-      into v_players, v_places
-      from game_results gr
-     where gr.game_id = v_game.id;
-
-    v_m := coalesce(array_length(v_players, 1), 0);
-    -- A solo game has nobody to be better than.
-    if v_m < 2 then
-      continue;
-    end if;
-
-    v_seq := v_seq + 1;
-
-    -- Seed anyone new at the starting rating.
-    for i in 1 .. v_m loop
-      v_id := v_players[i];
-      if not v_state ? v_id::text then
-        v_state := jsonb_set(
-          v_state, array[v_id::text],
-          jsonb_build_object('r', v_start, 'n', 0));
-      end if;
-    end loop;
-
-    -- Deltas are computed against the ratings as they were BEFORE this game,
-    -- so the order players are processed in cannot change the result.
-    for i in 1 .. v_m loop
-      v_id  := v_players[i];
-      v_r_i := (v_state -> v_id::text -> 'r')::numeric;
-      v_n_i := (v_state -> v_id::text -> 'n')::integer;
-      v_k   := case when v_n_i < v_provisional then v_k_new else v_k_settled end;
-
-      v_sum := 0;
-      for j in 1 .. v_m loop
-        if i = j then
-          continue;
-        end if;
-        v_r_j := (v_state -> v_players[j]::text -> 'r')::numeric;
-
-        -- Finishing ahead is a win, level is a half. A shared win between two
-        -- players is worth the same to each as half a victory.
-        v_score := case
-                     when v_places[i] < v_places[j] then 1.0
-                     when v_places[i] = v_places[j] then 0.5
-                     else 0.0
-                   end;
-        v_expected := 1.0 / (1.0 + power(10.0, (v_r_j - v_r_i) / 400.0));
-        v_sum := v_sum + (v_score - v_expected);
-      end loop;
-
-      v_delta := (v_k::numeric / (v_m - 1)) * v_sum;
-
-      insert into rating_events (game_id, player_id, played_on, seq,
-                                 rating_before, rating_after, delta, k, opponents)
-      values (v_game.id, v_id, v_game.played_on, v_seq,
-              round(v_r_i, 2), round(v_r_i + v_delta, 2), round(v_delta, 2),
-              v_k, v_m - 1);
-    end loop;
-
-    -- Applied only once every delta for the game is known.
-    for i in 1 .. v_m loop
-      v_id := v_players[i];
-      v_state := jsonb_set(
-        v_state, array[v_id::text],
-        jsonb_build_object(
-          'r', (select rating_after from rating_events
-                 where game_id = v_game.id and player_id = v_id),
-          'n', (v_state -> v_id::text -> 'n')::integer + 1));
-    end loop;
-  end loop;
-end
-$fn$;
-
-create or replace function evaluate_achievements()
-returns void language plpgsql volatile as $fn$
-begin
-  delete from player_achievements where true;  -- safeupdate: see the header
-
-  -- First day won.
-  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
-  select distinct on (gr.player_id)
-         gr.player_id, 'first_blood', g.finished_at, gr.game_id
-    from game_results gr
-    join games g on g.id = gr.game_id
-   where gr.is_winner
-   order by gr.player_id, g.finished_at, gr.game_id;
-
-  -- First shut box, and the fifth.
-  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
-  select distinct on (gr.player_id)
-         gr.player_id, 'shut_the_box', g.finished_at, gr.game_id
-    from game_results gr
-    join games g on g.id = gr.game_id
-   where gr.is_shut_box
-   order by gr.player_id, g.finished_at, gr.game_id;
-
-  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
-  select player_id, 'box_collector', finished_at, game_id
-    from (
-      select gr.player_id, g.finished_at, gr.game_id,
-             row_number() over (partition by gr.player_id
-                                order by g.finished_at, gr.game_id) as nth
-        from game_results gr
-        join games g on g.id = gr.game_id
-       where gr.is_shut_box
-    ) ranked
-   where nth = 5;
-
-  -- A very good turn that was not quite perfect.
-  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
-  select distinct on (gr.player_id)
-         gr.player_id, 'low_roller', g.finished_at, gr.game_id
-    from game_results gr
-    join games g on g.id = gr.game_id
-    join rulesets r on r.id = gr.ruleset_id
-   where gr.score between 1 and 3
-     and r.rules->'scoring'->>'kind' = 'sum_open'
-   order by gr.player_id, g.finished_at, gr.game_id;
-
-  -- Games played.
-  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
-  select player_id, key, finished_at, game_id
-    from (
-      select gr.player_id, g.finished_at, gr.game_id,
-             row_number() over (partition by gr.player_id
-                                order by g.finished_at, gr.game_id) as nth
-        from game_results gr
-        join games g on g.id = gr.game_id
-    ) ranked
-    join (values ('regular_25', 25), ('century_100', 100)) as m(key, at_nth)
-      on ranked.nth = m.at_nth;
-
-  -- [concept: gaps-and-islands] Streaks run over days that were PLAYED, so a
-  -- weekend never breaks one. Numbering the wins inside each unbroken run gives
-  -- the day the streak reached three, five or ten.
-  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
-  select s.player_id, m.key, s.finished_at, s.game_id
-    from (
-      select islands.player_id,
-             row_number() over (partition by islands.player_id, islands.island
-                                order by islands.day_no) as run_length,
-             g.finished_at,
-             (select gr.game_id from game_results gr
-               where gr.player_id = islands.player_id
-                 and gr.played_on = islands.played_on
-                 and gr.is_winner
-               order by gr.game_id limit 1) as game_id
-        from (
-          select w.player_id, d.day_no, d.played_on,
-                 d.day_no - row_number() over (partition by w.player_id
-                                               order by d.day_no) as island
-            from daily_winners w
-            join (
-              select played_on,
-                     row_number() over (order by played_on) as day_no
-                from (select distinct played_on from games_valid) x
-            ) d using (played_on)
-        ) islands
-        join lateral (
-          select max(gv.finished_at) as finished_at
-            from games_valid gv where gv.played_on = islands.played_on
-        ) g on true
-    ) s
-    join (values ('streak_3', 3), ('streak_5', 5), ('streak_10', 10))
-      as m(key, at_length) on s.run_length = m.at_length;
-
-  -- The first game that took them to 1200.
-  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
-  select distinct on (re.player_id)
-         re.player_id, 'elo_1200', g.finished_at, re.game_id
-    from rating_events re
-    join games g on g.id = re.game_id
-   where re.rating_after >= 1200
-   order by re.player_id, re.seq;
-
-  -- Beating the strongest player at the table from well behind them.
-  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
-  select distinct on (underdog.player_id)
-         underdog.player_id, 'giant_slayer', g.finished_at, underdog.game_id
-    from rating_events underdog
-    join games g on g.id = underdog.game_id
-    join rating_events favourite
-      on favourite.game_id = underdog.game_id
-     and favourite.player_id <> underdog.player_id
-    join game_results me
-      on me.game_id = underdog.game_id and me.player_id = underdog.player_id
-    join game_results them
-      on them.game_id = favourite.game_id and them.player_id = favourite.player_id
-   where favourite.rating_before = (
-           select max(x.rating_before) from rating_events x
-            where x.game_id = underdog.game_id)
-     and underdog.rating_before <= favourite.rating_before - 150
-     and me.finish_position < them.finish_position
-   order by underdog.player_id, underdog.seq;
-
-  -- Won every day they turned up in one week, over at least three days.
-  insert into player_achievements (player_id, achievement_key, earned_at, game_id)
-  select distinct on (weeks.player_id)
-         weeks.player_id, 'perfect_week', weeks.finished_at, null
-    from (
-      select per_day.player_id,
-             date_trunc('week', per_day.played_on) as week,
-             max(per_day.finished_at) as finished_at,
-             count(*) as days,
-             bool_and(per_day.won) as every_day
-        from (
-          select gr.player_id, gr.played_on,
-                 bool_or(gr.is_winner) as won,
-                 max(g.finished_at) as finished_at
-            from game_results gr
-            join games g on g.id = gr.game_id
-           group by gr.player_id, gr.played_on
-        ) per_day
-       group by per_day.player_id, date_trunc('week', per_day.played_on)
-    ) weeks
-   where weeks.days >= 3 and weeks.every_day
-   order by weeks.player_id, weeks.finished_at;
-
-  -- Repeatable: one per closed season won.
-  insert into player_achievements (player_id, achievement_key, earned_at,
-                                   season_id, times)
-  select sc.player_id,
-         'season_champion',
-         (select max(gv.finished_at) from games_valid gv
-           where gv.season_id = sc.season_id),
-         sc.season_id,
-         count(*) over (partition by sc.player_id)
-    from season_champions sc
-  on conflict (player_id, achievement_key) do nothing;
-end
-$fn$;
-
-
--- ======================= 0017_roster.sql =======================
-
--- Shut the Box — joining and leaving a game in progress.
---
--- Somebody arrives late; somebody was picked and then gets pulled into a
--- meeting. Until now the only answers were "abandon and start again" or
--- "finish, then fix the record". These two RPCs handle it while the game is
--- live, under the rules agreed on 2026-09-08:
---
---   * a late joiner slots in LAST. If everyone has already rolled — the
---     scorekeeper is looking at the review screen — the joiner is up at once
---     and the game re-opens for exactly one turn;
---   * no joining after a shut box under an instant-win ruleset: the box being
---     shut ended the game by rule, and everyone still waiting is already dnp;
---   * leaving means "was picked, is not going to play". Only a `pending` row
---     can go, and it is removed entirely — never marked dnp, which stays
---     reserved for "the box was shut before their turn". A player mid-turn
---     ends or abandons the turn first; a player who has rolled stays, because
---     their score is part of the record;
---   * the scorekeeper hands over (claim_scorekeeper) before leaving: the
---     spectator view looks the scorekeeper up in the roster;
---   * scorekeeper only, one touch of live_turns each (so exactly one
---     broadcast, via the 0011 trigger), audited as game.join / game.leave.
---
--- Both return the live snapshot, like every other live RPC, so the client
--- reconciles from the same shape.
-
-create or replace function join_game(
-  p_actor     uuid,
-  p_game_id   uuid,
-  p_player_id uuid
-) returns jsonb language plpgsql volatile as $fn$
-declare
-  v_rules     jsonb;
-  v_order     integer;
-  v_anyone_up boolean;
-  v_name      text;
-begin
-  perform assert_scorekeeper(p_actor, p_game_id);   -- STB01 / STB03
-
-  select name into v_name from players where id = p_player_id and is_active;
-  if v_name is null then
-    raise exception 'that player is not on the active roster' using errcode = 'STB02';
-  end if;
-  if exists (select 1 from game_players
-              where game_id = p_game_id and player_id = p_player_id) then
-    raise exception 'that player is already in this game' using errcode = 'STB02';
+  -- Already settled for this week: hand back what is there. Callers rely on
+  -- this — the Monday cron and the Redraw button both just ask.
+  select * into v_duty
+    from fika_duties
+   where week_start = v_monday and skipped_at is null;
+  if found then
+    return v_duty;
   end if;
 
-  select r.rules into v_rules
-    from games g join rulesets r on r.id = g.ruleset_id
-   where g.id = p_game_id;
-  -- The same test game_results uses for is_shut_box: an empty board, or a
-  -- typed zero.
-  if ruleset_instant_win(v_rules) and exists (
-       select 1 from game_players gp
-        where gp.game_id = p_game_id and gp.status = 'done'
-          and coalesce(cardinality(gp.tiles_open) = 0, gp.score = 0)) then
-    raise exception 'the box was shut — this game is over' using errcode = 'STB02';
+  select id into v_cycle from fika_cycles order by seq desc limit 1;
+  if v_cycle is null then
+    insert into fika_cycles default values returning id into v_cycle;
   end if;
 
-  select coalesce(max(turn_order), 0) + 1 into v_order
-    from game_players where game_id = p_game_id;
-  v_anyone_up := exists (select 1 from game_players
-                          where game_id = p_game_id
-                            and status in ('playing', 'pending'));
+  -- Everyone active who has not already bought in this cycle.
+  select coalesce(array_agg(p.id), '{}') into v_eligible
+    from players p
+   where p.is_active
+     and not exists (
+       select 1 from fika_duties d
+        where d.cycle_id = v_cycle
+          and d.player_id = p.id
+          and d.skipped_at is null
+     );
 
-  insert into game_players (game_id, player_id, turn_order, status)
-  values (p_game_id, p_player_id, v_order,
-          (case when v_anyone_up then 'pending' else 'playing' end)::game_player_status);
+  -- Cycle exhausted: everybody has had a turn, so open the next one and put
+  -- the whole active roster back in the hat.
+  if cardinality(v_eligible) = 0 then
+    insert into fika_cycles default values returning id into v_cycle;
+    select coalesce(array_agg(p.id), '{}') into v_eligible
+      from players p where p.is_active;
+  end if;
 
-  -- One update, one broadcast. If the joiner is up at once the board is
-  -- theirs and empty; otherwise the current turn is left exactly as it was.
-  update live_turns
-     set player_id  = case when v_anyone_up then player_id else p_player_id end,
-         tiles_down = case when v_anyone_up then tiles_down else '{}' end,
-         version    = version + 1
-   where game_id = p_game_id;
+  if cardinality(v_eligible) = 0 then
+    raise exception 'nobody is eligible for fika' using errcode = 'STB08';
+  end if;
+
+  -- Somebody already turned this week down: they keep their place in the
+  -- cycle but must not be handed straight back the same week.
+  select coalesce(array_agg(x), '{}') into v_eligible
+    from unnest(v_eligible) x
+   where not exists (
+     select 1 from fika_duties d
+      where d.week_start = v_monday
+        and d.player_id = x
+        and d.skipped_at is not null
+   );
+
+  if cardinality(v_eligible) = 0 then
+    raise exception 'everybody eligible has skipped this week' using errcode = 'STB08';
+  end if;
+
+  -- Worst average normalised finish over last week's games.
+  with played as (
+    select r.player_id,
+           avg((r.finish_position - 1)::numeric / (r.participants - 1)) as badness,
+           count(*) as games
+      from game_results r
+      join games_valid g on g.id = r.game_id
+     where g.played_on between v_monday - 7 and v_monday - 1
+       and r.participants >= 2
+       and r.player_id = any(v_eligible)
+     group by r.player_id
+  )
+  select player_id,
+         jsonb_build_object('badness', round(badness, 3), 'games', games,
+                            'from', v_monday - 7, 'to', v_monday - 1)
+    into v_pick, v_detail
+    from played
+   order by badness desc, random()
+   limit 1;
+
+  if v_pick is not null then
+    v_reason := 'worst_last_week';
+  else
+    -- Nobody eligible played last week (a quiet week, holidays, or everyone
+    -- left in the cycle happened to be away). Straight random.
+    select x into v_pick from unnest(v_eligible) x order by random() limit 1;
+    v_reason := 'random_fallback';
+    v_detail := jsonb_build_object('from', v_monday - 7, 'to', v_monday - 1);
+  end if;
+
+  insert into fika_duties (week_start, cycle_id, player_id, reason, detail, drawn_by)
+  values (v_monday, v_cycle, v_pick, v_reason, v_detail, p_actor)
+  on conflict do nothing
+  returning * into v_duty;
+
+  -- Lost the race with a concurrent draw: return the one that won.
+  if v_duty.id is null then
+    select * into v_duty
+      from fika_duties
+     where week_start = v_monday and skipped_at is null;
+  end if;
 
   insert into audit_log (actor_player_id, action, entity, entity_id, after, note)
-  values (p_actor, 'game.join', 'game', p_game_id,
-          jsonb_build_object('player_id', p_player_id, 'turn_order', v_order,
-                             'up_at_once', not v_anyone_up),
-          format('added %s', v_name));
+  values (p_actor, 'fika.draw', 'fika', v_duty.id, to_jsonb(v_duty),
+          format('%s buys fika for the week of %s', v_duty.player_id, v_monday));
 
-  return live_game_snapshot(p_game_id);
+  return v_duty;
 end
 $fn$;
 
-create or replace function leave_game(
-  p_actor     uuid,
-  p_game_id   uuid,
-  p_player_id uuid
-) returns jsonb language plpgsql volatile as $fn$
+/**
+ * Turn a duty down and immediately draw a replacement for the same week.
+ * The skipper stays in the cycle: they have still not bought.
+ */
+create or replace function skip_fika(
+  p_actor   uuid,
+  p_duty_id uuid
+) returns fika_duties language plpgsql volatile
+set search_path = public, pg_temp as $fn$
 declare
-  v_row  game_players;
-  v_name text;
+  v_old fika_duties;
 begin
-  perform assert_scorekeeper(p_actor, p_game_id);   -- STB01 / STB03
-
-  select * into v_row from game_players
-   where game_id = p_game_id and player_id = p_player_id;
+  select * into v_old from fika_duties where id = p_duty_id;
   if not found then
-    raise exception 'that player is not in this game' using errcode = 'STB02';
+    raise exception 'no such fika duty' using errcode = 'STB08';
   end if;
-  if p_player_id = (select scorekeeper_player_id from games where id = p_game_id) then
-    raise exception 'hand over scorekeeping first' using errcode = 'STB01';
-  end if;
-  if v_row.status = 'playing' then
-    raise exception 'end or abandon the turn first' using errcode = 'STB03';
-  end if;
-  if v_row.status <> 'pending' then
-    raise exception 'a player who has rolled stays in the record' using errcode = 'STB03';
-  end if;
-  -- Belt and braces: the first player is always `playing`, so a sole pending
-  -- row cannot exist. Kept so a future change to that cannot empty a game.
-  if (select count(*) from game_players where game_id = p_game_id) <= 1 then
-    raise exception 'abandon the game instead' using errcode = 'STB02';
+  if v_old.skipped_at is not null then
+    raise exception 'that duty was already skipped' using errcode = 'STB03';
   end if;
 
-  select name into v_name from players where id = p_player_id;
-
-  delete from game_players
-   where game_id = p_game_id and player_id = p_player_id;
-
-  update live_turns set version = version + 1 where game_id = p_game_id;
+  -- safeupdate (0016) refuses any UPDATE without a WHERE on the API
+  -- connection, and pgTAP would never notice because it runs as postgres.
+  update fika_duties
+     set skipped_at = now(), skipped_by = p_actor
+   where id = p_duty_id;
 
   insert into audit_log (actor_player_id, action, entity, entity_id, before, note)
-  values (p_actor, 'game.leave', 'game', p_game_id,
-          jsonb_build_object('player_id', p_player_id, 'turn_order', v_row.turn_order),
-          format('removed %s (never rolled)', v_name));
+  values (p_actor, 'fika.skip', 'fika', p_duty_id, to_jsonb(v_old),
+          format('%s skipped the week of %s', v_old.player_id, v_old.week_start));
 
-  return live_game_snapshot(p_game_id);
+  return draw_fika(v_old.week_start, p_actor);
 end
 $fn$;
+
+-- Who is buying, this week. One row or none.
+create or replace view fika_current
+with (security_invoker = true) as
+  select d.id,
+         d.week_start,
+         d.player_id,
+         p.name,
+         p.emoji,
+         d.reason,
+         d.detail,
+         d.drawn_at,
+         (select count(*) from fika_duties h
+           where h.player_id = d.player_id and h.skipped_at is null) as duties_total
+    from fika_duties d
+    join players p on p.id = d.player_id
+   where d.skipped_at is null
+     and d.week_start = iso_monday(stockholm_today());
+
+grant select on fika_current to service_role;
+
+-- How many times each player has bought, for the profile page.
+create or replace view fika_tally
+with (security_invoker = true) as
+  select p.id as player_id,
+         count(d.id) filter (where d.skipped_at is null) as duties
+    from players p
+    left join fika_duties d on d.player_id = p.id
+   group by p.id;
+
+grant select on fika_tally to service_role;
 
 do $grants$
 declare v_fn text;
 begin
   foreach v_fn in array array[
-    'join_game(uuid, uuid, uuid)',
-    'leave_game(uuid, uuid, uuid)'
+    'iso_monday(date)',
+    'draw_fika(date, uuid)',
+    'skip_fika(uuid, uuid)'
   ] loop
     execute format('revoke execute on function %s from public, anon, authenticated', v_fn);
     execute format('grant execute on function %s to service_role', v_fn);
   end loop;
 end
 $grants$;
+
+
+-- ======================= 0019_cron.sql =======================
+
+-- Shut the Box — the cron ledger.
+--
+-- [concept: idempotency guard] Vercel Hobby fires a cron job anywhere inside
+-- its scheduled hour and gives no delivery guarantee, so a job can arrive
+-- twice. Everything the morning job does is loud — it posts to the team's
+-- Teams channel — and a digest posted twice is worse than one posted late.
+--
+-- One row per (job, day) is the lock: the handler inserts first, and an
+-- insert that hits the primary key means somebody already ran today, so it
+-- returns {ran:false} and does nothing else. The row is also the log of what
+-- that run decided.
+--
+-- Writing to this table on every invocation has a second job: Supabase pauses
+-- a free project after seven idle days, and a daily write is what keeps the
+-- office scoreboard from being asleep on Monday morning.
+
+create table cron_runs (
+  job      text not null check (job in ('morning', 'afternoon')),
+  run_date date not null,
+  ran_at   timestamptz not null default now(),
+  result   jsonb not null default '{}'::jsonb,
+  primary key (job, run_date)
+);
+
+alter table cron_runs enable row level security;
+
+grant select, insert, update on cron_runs to service_role;
+
+-- Games that were started and never finished — a phone died, or everyone went
+-- back to their desks. They hold the "one live game per scorekeeper" index
+-- and show as "Live now" on Today forever, so the morning job sweeps them.
+--
+-- Returns the ids it abandoned so the handler can report a number.
+create or replace function abandon_stale_games(p_older_than interval default '3 hours')
+returns setof uuid language plpgsql volatile
+set search_path = public, pg_temp as $fn$
+declare
+  v_id uuid;
+begin
+  for v_id in
+    select id from games
+     where status = 'in_progress'
+       and updated_at < now() - p_older_than
+  loop
+    -- Null actor: nobody chose this, the clock did.
+    perform abandon_game(null, v_id, 'abandoned automatically — no activity');
+    return next v_id;
+  end loop;
+end
+$fn$;
+
+revoke execute on function abandon_stale_games(interval) from public, anon, authenticated;
+grant execute on function abandon_stale_games(interval) to service_role;
 
 
 -- ===========================================================================
@@ -577,7 +386,9 @@ values
   ('0014', 'plan_season'),
   ('0015', 'storage'),
   ('0016', 'safeupdate'),
-  ('0017', 'roster')
+  ('0017', 'roster'),
+  ('0018', 'fika'),
+  ('0019', 'cron')
 on conflict (version) do nothing;
 
 commit;
