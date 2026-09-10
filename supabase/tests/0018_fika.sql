@@ -14,12 +14,19 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(26);
 
--- Cycle exhaustion is a statement about the WHOLE active roster, so this
--- test has to own it. seed.sql leaves three players in the local database
--- and they quietly kept the cycle from ever running out — the same shape of
--- bug as the 0007 test that only passed against a dirty database. Benching
--- them inside the transaction is rolled back with everything else.
+-- This test has to OWN the roster and the rota, because both are statements
+-- about global state: cycle exhaustion depends on every active player, and
+-- draw_fika returns any duty already standing for the week rather than
+-- drawing a new one. Run against a database somebody has actually used and
+-- both assumptions break — which is exactly how it failed the first two
+-- times, first on seed.sql's three players and then on rota rows left by
+-- hand-testing. Everything here is inside the transaction and rolled back.
+--
+-- The rule from 0007 still applies: run `db reset && db test` AND `db test`
+-- against a database with data. Both must pass.
 update players set is_active = false where is_active;
+delete from fika_duties where true;
+delete from fika_cycles where true;
 
 insert into players (id, name, emoji, is_active) values
   ('fa000000-0000-4000-8000-000000000001', 'Fika Ada',  '🦊', true),
