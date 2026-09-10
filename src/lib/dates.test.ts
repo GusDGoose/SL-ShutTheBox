@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayLabel, stockholmToday } from "./dates";
+import { dayLabel, isoMonday, shiftDays, stockholmToday } from "./dates";
 
 describe("stockholmToday", () => {
   it("returns YYYY-MM-DD", () => {
@@ -43,5 +43,40 @@ describe("dayLabel", () => {
 
   it("does not drift across the autumn DST change", () => {
     expect(dayLabel("2026-10-25")).toBe("Sunday 25 October");
+  });
+});
+
+describe("isoMonday", () => {
+  it("leaves a Monday alone", () => {
+    expect(isoMonday("2026-09-07")).toBe("2026-09-07");
+  });
+
+  it("walks back to Monday from any weekday", () => {
+    expect(isoMonday("2026-09-10")).toBe("2026-09-07");
+    expect(isoMonday("2026-09-11")).toBe("2026-09-07");
+  });
+
+  it("puts Sunday in the week that started six days earlier", () => {
+    // The off-by-one that would put Sunday in the wrong week entirely.
+    expect(isoMonday("2026-09-13")).toBe("2026-09-07");
+    expect(isoMonday("2026-09-14")).toBe("2026-09-14");
+  });
+
+  it("crosses a month and a year boundary", () => {
+    expect(isoMonday("2026-10-01")).toBe("2026-09-28");
+    expect(isoMonday("2027-01-01")).toBe("2026-12-28");
+  });
+});
+
+describe("shiftDays", () => {
+  it("moves forwards and backwards across months", () => {
+    expect(shiftDays("2026-09-07", -7)).toBe("2026-08-31");
+    expect(shiftDays("2026-08-31", 1)).toBe("2026-09-01");
+  });
+
+  it("survives the spring clock change, which is why it works in UTC", () => {
+    // Europe/Stockholm springs forward on 2026-03-29.
+    expect(shiftDays("2026-03-28", 1)).toBe("2026-03-29");
+    expect(shiftDays("2026-03-29", 1)).toBe("2026-03-30");
   });
 });

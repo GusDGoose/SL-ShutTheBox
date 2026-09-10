@@ -127,7 +127,20 @@ export function SongClipEditor({ player }: { player: Player }) {
     setPreviewing(true);
   }
 
-  const field =
+  // A clip position is mm:ss, and inputMode="numeric" gives a phone the digits
+// keypad — which has no colon on it, so "1:30" was literally untypeable on
+// the device most people set their song from. Text keyboard, and the parser
+// takes a full stop or comma as the separator for anyone who still reaches
+// for the number pad.
+const TIMESTAMP_INPUT = {
+  type: "text",
+  inputMode: "text",
+  autoComplete: "off",
+  autoCorrect: "off",
+  spellCheck: false,
+} as const;
+
+const field =
     "w-20 rounded-[var(--radius-control)] border border-line bg-surface px-2 py-1.5 text-sm tabular-nums";
 
   return (
@@ -154,7 +167,7 @@ export function SongClipEditor({ player }: { player: Player }) {
             value={start}
             onChange={(e) => setStart(e.target.value)}
             placeholder="1:30"
-            inputMode="numeric"
+            {...TIMESTAMP_INPUT}
             className={field}
           />
         </label>
@@ -165,7 +178,7 @@ export function SongClipEditor({ player }: { player: Player }) {
             value={end}
             onChange={(e) => setEnd(e.target.value)}
             placeholder="to the end"
-            inputMode="numeric"
+            {...TIMESTAMP_INPUT}
             className={field}
           />
         </label>
@@ -192,6 +205,11 @@ export function SongClipEditor({ player }: { player: Player }) {
           {pending ? "Saving…" : "Save clip"}
         </Button>
       </div>
+
+      <p className="text-xs text-ink-muted">
+        Times are <span className="font-semibold">mm:ss</span> — 1:30, or 90 for
+        plain seconds. A full stop works too.
+      </p>
 
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <input

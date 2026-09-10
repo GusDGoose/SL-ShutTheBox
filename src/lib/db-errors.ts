@@ -14,6 +14,7 @@ const MESSAGES: Record<string, string> = {
   STB05: "Nobody has played a turn yet.",
   STB06: "That date is in the future.",
   STB07: "There is a newer change on this game, so this one cannot be undone.",
+  STB08: "There is nobody left to hand the fika duty to.",
   STB09: "You are already keeping score for another game.",
 };
 

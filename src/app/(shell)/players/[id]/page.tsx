@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getIdentity } from "@/lib/auth";
 import { dayLabel, stockholmToday } from "@/lib/dates";
 import { getPlayerProfile } from "@/lib/queries/history";
+import { getFikaTally } from "@/lib/queries/fika";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,11 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
   const { id } = await params;
   if (!UUID.test(id)) notFound();
 
-  const [profile, me] = await Promise.all([getPlayerProfile(id), getIdentity()]);
+  const [profile, me, fikaTally] = await Promise.all([
+    getPlayerProfile(id),
+    getIdentity(),
+    getFikaTally(),
+  ]);
   if (!profile) notFound();
 
   const { player, stats, streak, rating, ratingRank } = profile;
@@ -119,6 +124,13 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
               label="Avg place"
               value={stats!.avg_finish === null ? "—" : String(stats!.avg_finish)}
             />
+            {(fikaTally.get(id) ?? 0) > 0 && (
+              <Tile
+                label="Fika"
+                value={`☕ ${fikaTally.get(id)}`}
+                hint="weeks they bought"
+              />
+            )}
             {stats!.dnp_count > 0 && (
               <Tile
                 label="Boxed out"

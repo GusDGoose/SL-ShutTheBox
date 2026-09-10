@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
-import { BookOpen, ChevronRight, Images, PencilLine } from "lucide-react";
+import { BookOpen, ChevronRight, Coffee, Images, PencilLine } from "lucide-react";
 import { AppearanceControls } from "@/components/shell/theme-picker";
 import { SoundSetting } from "@/components/shell/sound-setting";
 import { buttonClass } from "@/components/ui/button";
@@ -40,6 +40,12 @@ export default async function MorePage() {
       icon: Images,
       title: "History & scrapbook",
       body: "Every game month by month, with the photos of the day.",
+    },
+    {
+      href: "/fika",
+      icon: Coffee,
+      title: "Fika rota",
+      body: "Who buys this week, why it is them, and everyone before.",
     },
     {
       href: "/record",

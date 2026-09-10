@@ -43,3 +43,24 @@ describe("formatTimestamp", () => {
     }
   });
 });
+
+describe("parseTimestamp — separators people actually type", () => {
+  it("reads a full stop or comma as a colon", () => {
+    // The numeric keypad on a phone offers "." (or "," on a Swedish layout)
+    // and no colon at all, which is how this bug was found.
+    expect(parseTimestamp("1.30")).toBe(90);
+    expect(parseTimestamp("1,30")).toBe(90);
+    expect(parseTimestamp("1.02.03")).toBe(3723);
+  });
+
+  it("still rejects a nonsense seconds field however it was typed", () => {
+    expect(parseTimestamp("1.75")).toBeNull();
+    expect(parseTimestamp("1:75")).toBeNull();
+  });
+
+  it("leaves plain seconds meaning plain seconds", () => {
+    // "130" must NOT become 1:30 — it has always meant 130 seconds, and
+    // silently changing that would move every clip already saved.
+    expect(parseTimestamp("130")).toBe(130);
+  });
+});

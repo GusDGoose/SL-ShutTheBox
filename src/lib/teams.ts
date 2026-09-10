@@ -1,10 +1,22 @@
 import "server-only";
 import { supabaseAdmin } from "./supabase";
+import {
+  digestBlocks,
+  fikaBlocks,
+  nudgeBlocks,
+  winnerBlocks,
+  type CardBlock,
+  type Digest,
+  type FikaLine,
+} from "./teams-cards";
 
 // [concept: webhook + Adaptive Card] Classic Office 365 "Incoming Webhook"
 // connectors are retired — this posts to a Teams *Workflows* webhook
 // ("Post to a channel when a webhook request is received"), which expects an
 // Adaptive Card wrapped in a message envelope, not plain {"text": ...}.
+//
+// Every function here is best-effort by design: a Teams outage must never
+// cost somebody their game. Callers either ignore the result or log it.
 
 export type AnnouncedWinner = {
   name: string;
@@ -14,36 +26,26 @@ export type AnnouncedWinner = {
   shutBox: boolean;
 };
 
-export async function postWinnerCard(winners: AnnouncedWinner[]): Promise<void> {
+type Action = { title: string; url: string };
+
+/**
+ * Post one card. Returns false when the feature is off or the post failed —
+ * never throws, because every caller is in the middle of doing something the
+ * user cares about more than a chat message.
+ */
+export async function postCard(
+  blocks: CardBlock[],
+  actions: Action[] = [],
+): Promise<boolean> {
   const url = process.env.TEAMS_WEBHOOK_URL;
-  if (!url || winners.length === 0) return; // feature silently off
-
-  const names = winners.map((w) => `${w.emoji} ${w.name}`).join(" & ");
-  const score = winners[0].score;
-  const shutBox = winners.some((w) => w.shutBox);
-  const maxStreak = Math.max(...winners.map((w) => w.streak));
-
-  const body: object[] = [
-    {
-      type: "TextBlock",
-      size: "Large",
-      weight: "Bolder",
-      text: `👑 ${names} won today's Shut the Box!`,
-      wrap: true,
-    },
-    {
-      type: "TextBlock",
-      text: shutBox
-        ? `Winning score: ${score} — 📦 THE BOX WAS SHUT!`
-        : `Winning score: ${score}`,
-      wrap: true,
-    },
-  ];
-  if (maxStreak >= 2) {
-    body.push({ type: "TextBlock", text: `🔥 ${maxStreak} days running`, wrap: true });
-  }
+  if (!url || blocks.length === 0) return false;
 
   const appUrl = process.env.APP_URL;
+  const openApp: Action[] = appUrl
+    ? [{ title: "Open the scoreboard", url: appUrl }]
+    : [];
+  const all = [...actions, ...openApp];
+
   const payload = {
     type: "message",
     attachments: [
@@ -53,12 +55,14 @@ export async function postWinnerCard(winners: AnnouncedWinner[]): Promise<void> 
           $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
           type: "AdaptiveCard",
           version: "1.4",
-          body,
-          ...(appUrl
+          body: blocks,
+          ...(all.length
             ? {
-                actions: [
-                  { type: "Action.OpenUrl", title: "Open the scoreboard", url: appUrl },
-                ],
+                actions: all.map((a) => ({
+                  type: "Action.OpenUrl",
+                  title: a.title,
+                  url: a.url,
+                })),
               }
             : {}),
         },
@@ -66,12 +70,34 @@ export async function postWinnerCard(winners: AnnouncedWinner[]): Promise<void> 
     ],
   };
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`Teams webhook responded ${res.status}`);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      // A hanging webhook must not hold a serverless function open.
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** This week's fika buyer, for the line every card carries. */
+async function currentFika(): Promise<FikaLine> {
+  const { data } = await supabaseAdmin()
+    .from("fika_current")
+    .select("name, emoji")
+    .maybeSingle();
+  return (data as { name: string; emoji: string } | null) ?? null;
+}
+
+export async function postWinnerCard(
+  winners: AnnouncedWinner[],
+): Promise<boolean> {
+  if (!process.env.TEAMS_WEBHOOK_URL || winners.length === 0) return false;
+  return postCard(winnerBlocks(winners, await currentFika()));
 }
 
 /**
@@ -127,5 +153,34 @@ export async function announceWinners(gameId: string): Promise<void> {
       streak: streaks.get(w.player_id) ?? 0,
       shutBox: w.is_shut_box,
     })),
+  );
+}
+
+/** Monday morning: how last week went. */
+export async function postDigest(digest: Digest): Promise<boolean> {
+  return postCard(digestBlocks(digest, await currentFika()));
+}
+
+/** Early afternoon on a day nobody has played yet. */
+export async function postNudge(): Promise<boolean> {
+  const appUrl = process.env.APP_URL;
+  return postCard(
+    nudgeBlocks(await currentFika()),
+    appUrl ? [{ title: "Start a game 🎲", url: `${appUrl}/play` }] : [],
+  );
+}
+
+/** Monday, once the rota has drawn. */
+export async function postFikaCard(duty: {
+  name: string;
+  emoji: string;
+  reason: "worst_last_week" | "random_fallback";
+  badness?: number | null;
+  games?: number | null;
+}): Promise<boolean> {
+  const appUrl = process.env.APP_URL;
+  return postCard(
+    fikaBlocks(duty),
+    appUrl ? [{ title: "The rota ☕", url: `${appUrl}/fika` }] : [],
   );
 }

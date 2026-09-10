@@ -1,20 +1,22 @@
 import Link from "next/link";
 import type { GameResultRow, Player } from "@/lib/types";
 import { getIdentity } from "@/lib/auth";
-import { dayLabel, stockholmToday } from "@/lib/dates";
+import { dayLabel, isoMonday, stockholmToday } from "@/lib/dates";
 import { parseSnapshot } from "@/lib/live";
 import { supabaseAdmin } from "@/lib/supabase";
 import { buttonClass } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MiniBoard } from "@/components/board/mini-board";
 import { LiveGameCard } from "@/components/game/live-game-card";
+import { FikaCard } from "@/components/fika/fika-card";
+import { getFikaCurrent } from "@/lib/queries/fika";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const sb = supabaseAdmin();
   const today = stockholmToday();
-  const me = await getIdentity();
+  const [me, fika] = await Promise.all([getIdentity(), getFikaCurrent()]);
 
   // Live and finished are now different things. The v1 page selected every
   // game for today regardless of status, so once games gained a lifecycle an
@@ -150,6 +152,10 @@ export default async function Home() {
           )}
         </>
       )}
+
+      {/* Who owes cake. It sits below the games because on most days the
+          game is the news and the rota is the reminder. */}
+      <FikaCard duty={fika} weekStart={isoMonday(today)} canAct={me !== null} />
 
       {/* The forgotten Friday, or the day the app was down: a game that was
           played on the real box and never entered. Recording it after the
