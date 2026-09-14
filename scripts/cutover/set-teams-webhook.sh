@@ -57,23 +57,81 @@ fi
 
 echo "Shut the Box — Teams webhook setup"
 echo
-printf 'Paste the Teams webhook URL (hidden), then Enter: '
-read -rs URL
-printf '\n'
 
-# [concept: a paste is not what read() gets] MinTTY and most modern terminals
-# wrap pasted text in bracketed-paste escapes — ESC[200~ before, ESC[201~
-# after — and `read` stores them verbatim. The value then starts with
-# [200~ rather than https://, so a perfectly good webhook link was
-# rejected as "not an https URL". Strip any escape sequence, then pull the
-# URL out of whatever is left, which also forgives stray spaces and quotes.
-URL=$(printf '%s' "$URL" | sed $'s/\[[0-9;]*[~a-zA-Z]//g')
-URL=$(printf '%s' "$URL" | grep -oE 'https://[^[:space:]"'"'"']+' | head -1 || true)
+# [concept: a hidden prompt is a bad place to receive a paste] This asked for
+# the URL with `read -s`, which echoes nothing — so a paste that silently did
+# not arrive looked exactly like a paste that arrived malformed, and there was
+# no way to tell them apart. Several terminals will not paste into a hidden
+# read at all (in Git Bash it is Shift+Insert or right-click, never Ctrl+V).
+#
+# So there are now four ways in, and the interactive one reports what it got:
+#
+#   bash set-teams-webhook.sh --file url.txt      <- most reliable
+#   TEAMS_WEBHOOK_URL="https://..." bash set-teams-webhook.sh
+#   bash set-teams-webhook.sh "https://..."       <- goes in shell history
+#   bash set-teams-webhook.sh                     <- prompts
+
+# Strip ANSI and bracketed-paste escapes (ESC[200~ … ESC[201~, which terminals
+# wrap pasted text in and `read` stores verbatim), then pull out the first
+# https link, which also forgives stray spaces and quotes.
+ESC=$(printf '\033')
+clean_url() {
+  printf '%s' "$1" \
+    | sed -e "s/${ESC}\[[0-9;]*[~a-zA-Z]//g" \
+    | grep -oE 'https://[^[:space:]"'"'"']+' \
+    | head -1 || true
+}
+
+URL=""
+case "${1:-}" in
+  --file)
+    SRC="${2:-}"
+    [ -n "$SRC" ] || { echo "--file needs a path" >&2; exit 1; }
+    [ -f "$SRC" ] || { echo "no such file: $SRC" >&2; exit 1; }
+    URL=$(clean_url "$(cat "$SRC")")
+    [ -n "$URL" ] || { echo "no https:// link inside $SRC" >&2; exit 1; }
+    echo "read the URL from $SRC"
+    ;;
+  --help|-h)
+    sed -n '2,15p' "$0"; exit 0 ;;
+  https://*)
+    URL=$(clean_url "$1") ;;
+  "")
+    if [ -n "${TEAMS_WEBHOOK_URL:-}" ]; then
+      URL=$(clean_url "$TEAMS_WEBHOOK_URL")
+      echo "read the URL from the TEAMS_WEBHOOK_URL environment variable"
+    fi
+    ;;
+  *)
+    echo "unrecognised argument: $1 (try --help)" >&2; exit 1 ;;
+esac
 
 if [ -z "$URL" ]; then
-  echo "no https:// link found in what was pasted; stopping." >&2
+  printf 'Paste the Teams webhook URL (hidden), then Enter: '
+  IFS= read -rs RAW || RAW=""
+  printf '\n'
+  URL=$(clean_url "${RAW:-}")
+
+  if [ -z "$URL" ]; then
+    # Say exactly what turned up. Zero characters means the paste never
+    # reached the shell, which is a different problem from a bad link.
+    echo "Nothing usable arrived — ${#RAW} characters were read."
+    echo "In Git Bash, paste is Shift+Insert or right-click; Ctrl+V does nothing."
+    echo "Trying once more with the text VISIBLE so you can see it land."
+    echo "(or press Enter to give up and use:  bash $0 --file url.txt)"
+    printf 'Webhook URL: '
+    IFS= read -r RAW2 || RAW2=""
+    URL=$(clean_url "${RAW2:-}")
+  fi
+fi
+
+if [ -z "$URL" ]; then
+  echo "still no https:// link; stopping. Nothing was saved." >&2
+  echo "Easiest fallback: put the URL in a file and run" >&2
+  echo "  bash $0 --file that-file.txt" >&2
   exit 1
 fi
+
 # Microsoft has used several hosts for these over time: logic.azure.com for
 # the original Logic Apps triggers, and *.environment.api.powerplatform.com
 # for the Power Platform ones Teams hands out now. Both are fine; anything
