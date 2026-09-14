@@ -61,14 +61,26 @@ printf 'Paste the Teams webhook URL (hidden), then Enter: '
 read -rs URL
 printf '\n'
 
-if [ -z "$URL" ]; then echo "nothing pasted; stopping." >&2; exit 1; fi
+# [concept: a paste is not what read() gets] MinTTY and most modern terminals
+# wrap pasted text in bracketed-paste escapes — ESC[200~ before, ESC[201~
+# after — and `read` stores them verbatim. The value then starts with
+# [200~ rather than https://, so a perfectly good webhook link was
+# rejected as "not an https URL". Strip any escape sequence, then pull the
+# URL out of whatever is left, which also forgives stray spaces and quotes.
+URL=$(printf '%s' "$URL" | sed $'s/\[[0-9;]*[~a-zA-Z]//g')
+URL=$(printf '%s' "$URL" | grep -oE 'https://[^[:space:]"'"'"']+' | head -1 || true)
+
+if [ -z "$URL" ]; then
+  echo "no https:// link found in what was pasted; stopping." >&2
+  exit 1
+fi
+# Microsoft has used several hosts for these over time: logic.azure.com for
+# the original Logic Apps triggers, and *.environment.api.powerplatform.com
+# for the Power Platform ones Teams hands out now. Both are fine; anything
+# else is worth a word, but not worth refusing.
 case "$URL" in
-  https://*) ;;
-  *) echo "that is not an https URL; stopping." >&2; exit 1 ;;
-esac
-case "$URL" in
-  *logic.azure.com*|*azure-apihub.net*) ;;
-  *) echo "note: a Teams Workflows URL usually contains logic.azure.com — carrying on anyway." ;;
+  *logic.azure.com*|*azure-apihub.net*|*powerplatform.com*) ;;
+  *) echo "note: that host is not one Teams usually gives out — carrying on anyway." ;;
 esac
 echo "URL looks like a webhook (${#URL} chars)."
 
@@ -99,8 +111,15 @@ read -r -d '' PAYLOAD <<'JSON' || true
 JSON
 
 echo "posting a test card…"
-CODE=$(curl -sS -o /tmp/teams-test-response.txt -w '%{http_code}' \
-  -X POST "$URL" -H "Content-Type: application/json" -d "$PAYLOAD" || echo "000")
+# [concept: never put UTF-8 on a Windows command line] The payload goes in on
+# STDIN, not as -d "$PAYLOAD". MinGW curl receives its arguments through the
+# Windows ANSI codepage, which turns every emoji into a literal "?" — so the
+# card meant to show what real announcements look like arrived reading
+# "?? Shut the Box is wired up". Piped bytes are not converted.
+#
+# curl already writes 000 through -w when it never got a response, so the old
+# `|| echo "000"` appended a second one and reported "HTTP 000000".
+CODE=$(printf '%s' "$PAYLOAD" | curl -sS -o /tmp/teams-test-response.txt   -w '%{http_code}' -X POST "$URL"   -H "Content-Type: application/json; charset=utf-8"   --data-binary @- || true)
 
 case "$CODE" in
   2*)
