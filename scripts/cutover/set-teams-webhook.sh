@@ -14,14 +14,38 @@
 # project, so giving them the webhook too would let a test deploy post real
 # cards into the team's channel.
 set -euo pipefail
+
+# [concept: never die silently] A script a person runs at a prompt and watches
+# must never exit with no output. This one did exactly that for four days: the
+# `ls` below lists two candidate paths, only one of which exists on any given
+# machine, so it exits 2 even when it FOUND the binary — and `set -e` plus
+# `pipefail` turned that into an instant, wordless exit.
+trap 'code=$?; if [ $code -ne 0 ]; then
+  echo >&2
+  echo "set-teams-webhook.sh stopped at line $LINENO (exit $code)." >&2
+  echo "Nothing was saved to Vercel." >&2
+fi' ERR
+
 cd "$(dirname "$0")/../.."
 
 # npx re-checks the npm registry on every call and hangs on a slow link, so
 # prefer the binary it has already cached. .vercel/project.json lives in the
 # main checkout, never in a worktree, hence --cwd.
 VERCEL_CWD=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
-CACHED=$(ls -d "${NPM_CONFIG_CACHE:-$HOME/.npm}"/_npx/*/node_modules/vercel/dist/index.js \
-              /c/IT/npm-cache/_npx/*/node_modules/vercel/dist/index.js 2>/dev/null | head -1)
+if [ ! -f "$VERCEL_CWD/.vercel/project.json" ]; then
+  echo "No .vercel/project.json under $VERCEL_CWD." >&2
+  echo "Run 'vercel link' in the main checkout first, or the CLI just prints" >&2
+  echo "'Retrieving project...' and returns nothing." >&2
+  exit 1
+fi
+# Each candidate is tested on its own: one `ls` over several globs fails as a
+# whole when ANY of them is missing, which is how this used to kill the script
+# even after it had found the binary.
+CACHED=""
+for candidate in   "${NPM_CONFIG_CACHE:-$HOME/.npm}"/_npx/*/node_modules/vercel/dist/index.js   /c/IT/npm-cache/_npx/*/node_modules/vercel/dist/index.js
+do
+  if [ -f "$candidate" ]; then CACHED="$candidate"; break; fi
+done
 if command -v vercel >/dev/null 2>&1; then
   vercel_cli() { vercel --cwd "$VERCEL_CWD" "$@"; }
 elif [ -n "$CACHED" ]; then
@@ -31,6 +55,8 @@ else
   vercel_cli() { npx --yes vercel --cwd "$VERCEL_CWD" "$@"; }
 fi
 
+echo "Shut the Box — Teams webhook setup"
+echo
 printf 'Paste the Teams webhook URL (hidden), then Enter: '
 read -rs URL
 printf '\n'
