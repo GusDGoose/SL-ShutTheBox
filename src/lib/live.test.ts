@@ -211,4 +211,18 @@ describe("describeDbError", () => {
     expect(isConflict({ code: "STB02" })).toBe(false);
     expect(isConflict(null)).toBe(false);
   });
+
+  it("counts a team play that moved on as the same kind of conflict", () => {
+    // The device is looking at an event that has been crowned or deleted, so
+    // the answer is reload, not retry.
+    expect(isConflict({ code: "STB10" })).toBe(true);
+    expect(isConflict({ code: "STB11" })).toBe(true);
+    expect(isConflict({ code: "STB12" })).toBe(false);
+  });
+
+  it("has copy for the team-play refusals, aimed at people new to the app", () => {
+    expect(describeDbError({ code: "STB10" })).toMatch(/code/i);
+    expect(describeDbError({ code: "STB11" })).toMatch(/finished/i);
+    expect(describeDbError({ code: "STB12" })).toMatch(/reload/i);
+  });
 });

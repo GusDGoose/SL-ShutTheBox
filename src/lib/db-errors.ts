@@ -16,6 +16,11 @@ const MESSAGES: Record<string, string> = {
   STB07: "There is a newer change on this game, so this one cannot be undone.",
   STB08: "There is nobody left to hand the fika duty to.",
   STB09: "You are already keeping score for another game.",
+  // Team play (0021). These reach people who have never seen the app before,
+  // so they say what to do rather than what went wrong.
+  STB10: "No team play has that code. Check the link and try again.",
+  STB11: "This team play has finished — the results are in.",
+  STB12: "That team is not at that stage any more. Reload to see where it got to.",
 };
 
 const FALLBACK = "That did not save. Try again?";
@@ -39,5 +44,13 @@ export function describeDbError(error: MaybePostgrestError): string {
 
 export function isConflict(error: MaybePostgrestError): boolean {
   const code = error?.code ?? "";
-  return code === "STB01" || code === "STB03" || code === "STB09";
+  return (
+    code === "STB01" ||
+    code === "STB03" ||
+    code === "STB09" ||
+    // The team-play twins: the event moved on under this device, so the answer
+    // is the same — reload rather than retry.
+    code === "STB10" ||
+    code === "STB11"
+  );
 }
