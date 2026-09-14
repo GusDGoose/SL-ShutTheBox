@@ -76,6 +76,15 @@ export function GameController({
   // One request at a time, with only the latest desired board queued behind it.
   const inFlight = useRef(false);
   const queued = useRef<number[] | null>(null);
+  /**
+   * [concept: taps belong to a turn] Bumped whenever the turn moves on. A tap
+   * queued behind an in-flight request used to survive "End turn" and land on
+   * the NEXT player's board — the server accepted it, because by then it was
+   * a legitimate newer write, so that player started with somebody else's
+   * tiles down and would have scored wrong if nobody noticed. Any reply or
+   * queued push from an older epoch is now discarded.
+   */
+  const epoch = useRef(0);
 
   const rules = snapshot.game.rules;
   const tiles = boardTiles(rules);
@@ -102,6 +111,7 @@ export function GameController({
   }
 
   async function pushBoard(next: number[]) {
+    const mine = epoch.current;
     if (inFlight.current) {
       queued.current = next;
       return;
@@ -109,6 +119,13 @@ export function GameController({
     inFlight.current = true;
     const res = await setBoard(gameId, next);
     inFlight.current = false;
+
+    // The turn ended while this was in the air: neither the reply nor
+    // anything queued behind it belongs to the board now on screen.
+    if (mine !== epoch.current) {
+      queued.current = null;
+      return;
+    }
 
     if (!res.ok) {
       setLocalDown(null); // fall back to whatever the server last told us
@@ -151,6 +168,10 @@ export function GameController({
 
   function handleEndTurn(typedScore?: number) {
     play("endTurn");
+    // Abandon any tap still in flight or queued: it was aimed at the turn
+    // that is ending, not at the one about to start.
+    epoch.current += 1;
+    queued.current = null;
     startTransition(async () => {
       const res = await endTurn(gameId, typedScore ?? null);
       if (!res.ok) {
@@ -165,6 +186,8 @@ export function GameController({
   }
 
   function handleFinish() {
+    epoch.current += 1;
+    queued.current = null;
     startTransition(async () => {
       const res = await finishGame(gameId);
       if (!res.ok) {
