@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signIn } from "./helpers";
+import { readScore, signIn } from "./helpers";
 
 /**
  * The path the office walks every lunchtime: PIN, say who you are, pick the
@@ -59,13 +59,3 @@ test("a whole game, from the PIN to the crown", async ({ page }) => {
     page.getByRole("button", { name: /crown the winner/i }),
   ).toBeVisible();
 });
-
-/** The "score if you stop now" readout, read the way a screen reader would. */
-async function readScore(page: import("@playwright/test").Page): Promise<number> {
-  const label = await page
-    .getByRole("status")
-    .first()
-    .getAttribute("aria-label");
-  const n = Number((label ?? "").replace(/[^0-9]/g, ""));
-  return Number.isNaN(n) ? -1 : n;
-}

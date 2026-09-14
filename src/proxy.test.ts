@@ -52,6 +52,22 @@ describe("proxy matcher", () => {
     expect(gated("/favicon.ico")).toBe(false);
   });
 
+  it("lets guests reach team play without the office PIN", () => {
+    // The join code in the link is what stands in for the PIN here; a colleague
+    // at a team day cannot be handed the office passcode.
+    expect(gated("/t")).toBe(false);
+    expect(gated("/t/ABC234")).toBe(false);
+    expect(gated("/t/abc234/team/8f2c")).toBe(false);
+    // /t/new creates an event, and gates itself on the PIN AND an identity.
+    expect(gated("/t/new")).toBe(false);
+  });
+
+  it("but only that route, not everything starting with a t", () => {
+    for (const path of ["/tea", "/tournament", "/t2x", "/players"]) {
+      expect(gated(path), `${path} must still require the PIN`).toBe(true);
+    }
+  });
+
   it("exempts the sound sprite so audio isn't redirected to the PIN page", () => {
     expect(gated("/sfx/sprite.mp3")).toBe(false);
     expect(gated("/sfx/sprite.json")).toBe(false);

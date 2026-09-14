@@ -63,8 +63,14 @@ function redirectTo(request: NextRequest, destination: string) {
 // The PWA manifest and icons must be exempt because the browser fetches them
 // WITHOUT cookies — gated, they redirect to /pin and the app can't be installed.
 // Cron routes carry their own CRON_SECRET instead of a PIN.
+//
+// /t/* is team play, and it is exempt from BOTH gates on purpose: the people at
+// a team day are guests who cannot be handed the office passcode, so the
+// six-character join code in their link is the credential instead (see
+// src/lib/tournament-code.ts). /t/new, which creates an event, is the one page
+// that needs a real colleague, so it checks the PIN and the identity itself.
 export const config = {
   matcher: [
-    "/((?!pin(?:$|/)|api/health(?:$|/)|api/cron(?:$|/)|_next/static|_next/image|favicon\.ico$|manifest\.webmanifest$|robots\.txt$|sitemap\.xml$|icons/|sfx/|icon\.svg$|icon\.png$|apple-icon\.png$).*)",
+    "/((?!pin(?:$|/)|t(?:$|/)|api/health(?:$|/)|api/cron(?:$|/)|_next/static|_next/image|favicon\.ico$|manifest\.webmanifest$|robots\.txt$|sitemap\.xml$|icons/|sfx/|icon\.svg$|icon\.png$|apple-icon\.png$).*)",
   ],
 };

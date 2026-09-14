@@ -42,3 +42,26 @@ for (const path of ["/", "/play", "/stats", "/players", "/more", "/fika"]) {
     expect(await violations(page)).toEqual([]);
   });
 }
+
+/**
+ * Team play is the one part of the app strangers use, on their own phones,
+ * with nobody to ask. It gets the same floor as everything else.
+ */
+test("team play is usable without sight, from setup to lobby", async ({ page }) => {
+  await signIn(page);
+
+  await page.goto("/t/new");
+  expect(await violations(page), "/t/new").toEqual([]);
+
+  await page.getByLabel(/what is the occasion/i).fill("A11y day");
+  await page.getByRole("button", { name: /create it/i }).click();
+  await page.waitForURL(/\/t\/[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/);
+  expect(await violations(page), "the lobby").toEqual([]);
+
+  // And with a team in it, which is when the cards and their status pills
+  // actually render.
+  await page.getByLabel("Team name").fill("Owls");
+  await page.getByRole("button", { name: /add the team/i }).click();
+  await page.waitForURL(/\/team\/[0-9a-f-]{36}$/);
+  expect(await violations(page), "a team's setup screen").toEqual([]);
+});

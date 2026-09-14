@@ -53,6 +53,7 @@ TypeScript. `0007_views.sql` is where the stats live.
 | `/rules` | the house rules, rendered from the season's ruleset |
 | `/fika` | who buys this week, why it is them, and everyone before |
 | `/more` | the rest of the app, plus board theme, sound and who this device is |
+| `/t/new` → `/t/[code]` | **team play** — a one-off event for guests, deliberately unlinked (below) |
 
 Four tabs cover the everyday routes — Today, Play, Stats, Players — and
 **More** collects the rest. Every page inside the shell lights exactly one
@@ -60,6 +61,48 @@ tab; `e2e/navigation.spec.ts` fails if one ever lights none, which is the
 state the app drifted into once already. `/settings` permanently redirects to
 `/more`. The board and the gates render in the `(focus)` group, which has no
 tab rail at all, so nothing competes with the game.
+
+## Team play
+
+A separate mode for a team day: four teams playing at once, everybody inside a
+team, the winning team's song at the end. Built for one afternoon and kept
+apart from everything else.
+
+- **Nothing links to it.** `/t/new` is reachable only by typing the URL. That
+  is the whole hiding mechanism — no flag, no date gate — so it can be merged,
+  deployed and rehearsed on production without anybody noticing.
+- **The join code is the credential.** `/t/*` is exempt from BOTH gates in
+  `src/proxy.ts`, because guests at a team day cannot be handed the office PIN.
+  Six characters from an alphabet with no `0/O/1/I`, checked by the database on
+  every call. `/t/new` creates an event against a real player, so it checks the
+  PIN and the identity itself.
+- **Anyone with the code can write.** Rename a team, correct a score, drive any
+  team's board. That is deliberate: it is the recovery path when the phone
+  keeping a team's score goes flat. Only crowning and deleting need a session.
+- **Teams and members are temporary.** Their own four tables, never a `players`
+  or `games` row, so ratings, badges, fika, seasons, the stats views and the
+  Teams webhook cannot see any of it.
+- **A team scores the AVERAGE of its members**, so a team of two is not beaten
+  by a team of four for being smaller. The sum is shown next to it. Ties share
+  the win and every winning team's anthem plays at once, as in the daily game.
+- **A team's status is derived, never stored** — playing when it has a board,
+  done when everybody has a score, forming otherwise. That is what lets
+  somebody turn up late and re-open a finished team. Ranking is separate and
+  starts as soon as ONE member has played, which is what makes it well defined
+  to crown the event while a team is still mid-way.
+- Guests reach `/t/*` over Realtime too: migration `0021` WIDENS the existing
+  anon policy on `realtime.messages` to `tournament:%` rather than adding a
+  second one, because `supabase/tests/0011_realtime.sql` asserts there is
+  exactly one and that assertion is worth keeping.
+
+**Running one.** Create it at `/t/new`, put `/t/<code>` on the big screen, and
+let one phone per team scan the QR. Each team names itself, picks an emoji and
+a YouTube link, adds its players, then plays with the real dice and taps what
+went down — or types the score off the one physical box. The lobby shows
+progress live. When the teams are done, **Finish & crown 👑** turns every screen
+in the room into the result at the same moment, and **Crown the winners** plays
+the song. Afterwards, **Delete this team play** clears an event away completely;
+that is how to clean up a rehearsal.
 
 ## Local development
 
@@ -130,8 +173,8 @@ and functions; needs the local stack running), `npm run e2e` (Playwright).
 
 ## Deploying a schema change
 
-The v1 → v2 cutover happened on 2026-09-08 (migrations `0003`–`0014`) and D8 on
-2026-09-09 (`0015`–`0017`). This section is the runbook that came out of it, and
+The v1 → v2 cutover happened on 2026-09-08 (migrations `0003`–`0014`), D8 on
+2026-09-09 (`0015`–`0017`) and team play on 2026-09-15 (`0021`). This section is the runbook that came out of it, and
 applies to any migration from here on.
 
 **The app and the schema move together.** A deployment one migration behind can

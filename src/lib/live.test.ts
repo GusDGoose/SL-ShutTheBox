@@ -9,7 +9,11 @@ import {
   STALE_AFTER_MS,
   type LiveSnapshot,
 } from "@/lib/live";
-import { describeDbError, isConflict } from "@/lib/db-errors";
+import {
+  describeDbError,
+  describeDbErrorVerbatim,
+  isConflict,
+} from "@/lib/db-errors";
 import type { Ruleset } from "@/lib/rules";
 
 const RULES: Ruleset = {
@@ -210,5 +214,22 @@ describe("describeDbError", () => {
     expect(isConflict({ code: "STB03" })).toBe(true);
     expect(isConflict({ code: "STB02" })).toBe(false);
     expect(isConflict(null)).toBe(false);
+  });
+
+  it("prefers the database's own sentence when it wrote one", () => {
+    expect(
+      describeDbErrorVerbatim({ code: "STB02", message: "add at least one player first" }),
+    ).toBe("Add at least one player first.");
+    // No STB code means nothing worth quoting, so the table speaks.
+    expect(describeDbErrorVerbatim({ code: "42P01", message: "relation x" })).toMatch(
+      /try again/i,
+    );
+    expect(describeDbErrorVerbatim(null)).toMatch(/try again/i);
+  });
+
+  it("has copy for the team-play refusals, aimed at people new to the app", () => {
+    expect(describeDbError({ code: "STB10" })).toMatch(/code/i);
+    expect(describeDbError({ code: "STB11" })).toMatch(/finished/i);
+    expect(describeDbError({ code: "STB12" })).toMatch(/reload/i);
   });
 });

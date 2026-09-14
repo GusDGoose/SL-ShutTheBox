@@ -16,6 +16,11 @@ const MESSAGES: Record<string, string> = {
   STB07: "There is a newer change on this game, so this one cannot be undone.",
   STB08: "There is nobody left to hand the fika duty to.",
   STB09: "You are already keeping score for another game.",
+  // Team play (0021). These reach people who have never seen the app before,
+  // so they say what to do rather than what went wrong.
+  STB10: "No team play has that code. Check the link and try again.",
+  STB11: "This team play has finished — the results are in.",
+  STB12: "That team is not at that stage any more. Reload to see where it got to.",
 };
 
 const FALLBACK = "That did not save. Try again?";
@@ -35,6 +40,21 @@ export function describeDbError(error: MaybePostgrestError): string {
   if (code === "23505") return MESSAGES.STB09!;
 
   return FALLBACK;
+}
+
+/**
+ * Prefers the sentence the database itself wrote, when it wrote one.
+ *
+ * The roster and team-play RPCs raise messages for the person at the table —
+ * "hand over scorekeeping first", "add at least one player first" — under the
+ * same STB codes the rest of the flow uses for quite different things. For
+ * those, the database's own sentence is the better copy; anything else falls
+ * back to the table above.
+ */
+export function describeDbErrorVerbatim(error: MaybePostgrestError): string {
+  const own = error?.code?.startsWith("STB") ? error?.message : null;
+  if (!own) return describeDbError(error);
+  return own.charAt(0).toUpperCase() + own.slice(1) + ".";
 }
 
 export function isConflict(error: MaybePostgrestError): boolean {
