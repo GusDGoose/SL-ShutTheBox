@@ -56,3 +56,10 @@ export async function expectNoHorizontalScroll(page: Page) {
   });
   expect(overflow, "document scrolls horizontally").toBeLessThanOrEqual(0);
 }
+
+/** The "score if you stop now" readout, read the way a screen reader would. */
+export async function readScore(page: Page): Promise<number> {
+  const label = await page.getByRole("status").first().getAttribute("aria-label");
+  const n = Number((label ?? "").replace(/[^0-9]/g, ""));
+  return Number.isNaN(n) ? -1 : n;
+}

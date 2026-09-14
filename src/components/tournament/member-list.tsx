@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { X } from "lucide-react";
-import { MiniBoard } from "@/components/board/mini-board";
 import { Button } from "@/components/ui/button";
+import { inputClass } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import { MemberScore } from "@/components/tournament/member-score";
 import { addMember, removeMember } from "@/app/(public)/t/actions";
 import type { TournamentSnapshot, TournamentTeam } from "@/lib/tournament";
 import { tilesOf, type Ruleset } from "@/lib/rules";
@@ -68,7 +69,6 @@ export function MemberList({
       {team.members.length > 0 && (
         <ol className="flex flex-col gap-2">
           {team.members.map((member, index) => {
-            const played = member.score !== null;
             const up = member.id === liveId;
             return (
               <li
@@ -85,31 +85,24 @@ export function MemberList({
                   {up && <span className="shrink-0 text-xs text-ink-muted">up now</span>}
                 </span>
 
-                <span className="flex shrink-0 items-center gap-2">
-                  {played ? (
-                    <>
-                      <MiniBoard tiles={tiles} open={member.tiles_open} />
-                      <span className="font-[family-name:var(--font-display)] font-bold tabular-nums">
-                        {member.score === 0 ? "📦 0" : member.score}
-                      </span>
-                    </>
-                  ) : (
-                    // Only somebody who has not rolled can go, and never the
-                    // one standing at the board — the database refuses both,
-                    // so the button simply is not offered.
-                    !up && (
-                      <button
-                        type="button"
-                        aria-label={`Remove ${member.name}`}
-                        disabled={pending}
-                        onClick={() => remove(member.id)}
-                        className="flex size-8 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-2 hover:text-danger"
-                      >
-                        <X aria-hidden size={16} />
-                      </button>
-                    )
-                  )}
-                </span>
+                {member.score !== null ? (
+                  <MemberScore member={member} tiles={tiles} size="lg" />
+                ) : (
+                  // Only somebody who has not rolled can go, and never the one
+                  // standing at the board — the database refuses both, so the
+                  // button simply is not offered.
+                  !up && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${member.name}`}
+                      disabled={pending}
+                      onClick={() => remove(member.id)}
+                      className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-2 hover:text-danger"
+                    >
+                      <X aria-hidden size={16} />
+                    </button>
+                  )
+                )}
               </li>
             );
           })}
@@ -130,7 +123,7 @@ export function MemberList({
           autoComplete="off"
           aria-label="Player name"
           placeholder="Name"
-          className="min-h-11 min-w-0 flex-1 rounded-[var(--radius-control)] border border-line bg-canvas px-3 text-base"
+          className={`${inputClass} min-w-0 flex-1`}
         />
         <Button type="submit" variant="secondary" disabled={pending}>
           {addLabel}

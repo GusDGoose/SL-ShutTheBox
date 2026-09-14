@@ -3,7 +3,6 @@ import {
   CODE_ALPHABET,
   CODE_LENGTH,
   codeSpaced,
-  isValidCode,
   normalizeCode,
 } from "./tournament-code";
 
@@ -42,7 +41,8 @@ describe("normalizeCode", () => {
     expect(CODE_ALPHABET).not.toMatch(/[01OI]/);
     expect(CODE_LENGTH).toBe(6);
     for (const character of CODE_ALPHABET) {
-      expect(isValidCode(character.repeat(CODE_LENGTH))).toBe(true);
+      const code = character.repeat(CODE_LENGTH);
+      expect(normalizeCode(code)).toBe(code);
     }
   });
 });

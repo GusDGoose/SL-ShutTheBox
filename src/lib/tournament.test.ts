@@ -4,6 +4,8 @@ import {
   createdTeamId,
   didNotFinish,
   formatAverage,
+  formatTeamDetail,
+  joinNames,
   liveMember,
   parseTournamentSnapshot,
   rankedTeams,
@@ -151,6 +153,21 @@ describe("winnerTitle", () => {
 
   it("says something sensible when nobody played", () => {
     expect(winnerTitle([])).toBe("Nobody played");
+  });
+});
+
+describe("joinNames", () => {
+  it("is what both the headline and the link preview use", () => {
+    expect(joinNames(["Foxes"])).toBe("Foxes");
+    expect(joinNames(["Foxes", "Owls"])).toBe("Foxes & Owls");
+    expect(joinNames(["Foxes", "Owls", "Bears"])).toBe("Foxes, Owls & Bears");
+  });
+});
+
+describe("formatTeamDetail", () => {
+  it("pluralises the one line people will want to reword", () => {
+    expect(formatTeamDetail(team({ sum: 40, played_count: 1 }))).toBe("40 over 1 player");
+    expect(formatTeamDetail(team({ sum: 112, played_count: 2 }))).toBe("112 over 2 players");
   });
 });
 

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signIn } from "./helpers";
+import { readScore, signIn } from "./helpers";
 
 /**
  * Team play, from an organiser creating an event to a crowned winner.
@@ -145,10 +145,3 @@ test("a guest cannot start an event, only join one", async ({ browser }) => {
 
   await guestContext.close();
 });
-
-/** The "score if you stop now" readout, read the way a screen reader would. */
-async function readScore(page: import("@playwright/test").Page): Promise<number> {
-  const label = await page.getByRole("status").first().getAttribute("aria-label");
-  const n = Number((label ?? "").replace(/[^0-9]/g, ""));
-  return Number.isNaN(n) ? -1 : n;
-}

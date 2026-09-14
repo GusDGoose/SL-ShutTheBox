@@ -7,39 +7,21 @@
  * panel and back.
  */
 const CHOICES = [
-  "🦊",
-  "🦉",
-  "🐻",
-  "🐙",
-  "🦁",
-  "🐝",
-  "🦄",
-  "🐢",
-  "🦈",
-  "🐸",
-  "🦩",
-  "🐧",
-  "🎲",
-  "🚀",
-  "⚡",
-  "🔥",
+  "🦊", "🦉", "🐻", "🐙", "🦁", "🐝", "🦄", "🐢",
+  "🦈", "🐸", "🦩", "🐧", "🎲", "🚀", "⚡", "🔥",
 ] as const;
+
+export const DEFAULT_EMOJI: string = CHOICES[0];
 
 export function EmojiPicker({
   value,
   onChange,
-  label = "Team badge",
 }: {
   value: string;
   onChange: (emoji: string) => void;
-  label?: string;
 }) {
   return (
-    <div
-      role="radiogroup"
-      aria-label={label}
-      className="flex flex-wrap gap-1.5"
-    >
+    <div role="radiogroup" aria-label="Team badge" className="flex flex-wrap gap-1.5">
       {CHOICES.map((emoji) => {
         const active = emoji === value;
         return (
@@ -51,9 +33,7 @@ export function EmojiPicker({
             aria-label={emoji}
             onClick={() => onChange(emoji)}
             className={`flex size-11 items-center justify-center rounded-[var(--radius-control)] border text-xl transition-colors ${
-              active
-                ? "border-brass bg-brass/20"
-                : "border-line hover:border-brass/60"
+              active ? "border-brass bg-brass/20" : "border-line hover:border-brass/60"
             }`}
           >
             <span aria-hidden>{emoji}</span>
@@ -63,5 +43,3 @@ export function EmojiPicker({
     </div>
   );
 }
-
-export const DEFAULT_EMOJI = CHOICES[0];

@@ -1,57 +1,34 @@
 import { cache } from "react";
 import { notFound, redirect } from "next/navigation";
-import { getIdentity, hasPin } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import { absoluteUrl } from "@/lib/app-url";
-import { rpc } from "@/lib/db-rows";
-import { supabaseAdmin } from "@/lib/supabase";
 import { normalizeCode } from "@/lib/tournament-code";
-import {
-  formatAverage,
-  parseTournamentSnapshot,
-  winningTeams,
-  type TournamentSnapshot,
-} from "@/lib/tournament";
+import { readTournament } from "@/lib/tournament-server";
+import { formatAverage, joinNames, winningTeams } from "@/lib/tournament";
 import { JoinPanel } from "@/components/tournament/join-panel";
 import { TournamentScreen } from "@/components/tournament/tournament-screen";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Read once per request, shared by generateMetadata and the page itself —
- * otherwise every render costs two round trips for the same value.
- */
-const loadTournament = cache(
-  async (code: string): Promise<TournamentSnapshot | null> => {
-    const { data, error } = await rpc(
-      supabaseAdmin(),
-      "tournament_snapshot_by_code",
-      { p_code: code },
-    );
-    if (error) throw new Error(error.message);
-    return data ? parseTournamentSnapshot(data) : null;
-  },
-);
+// Read once per request, shared by generateMetadata and the page — otherwise
+// every render costs two round trips for the same value.
+const loadTournament = cache(readTournament);
 
 export async function generateMetadata({ params }: PageProps<"/t/[code]">) {
   const { code } = await params;
   const normalised = normalizeCode(code);
-  if (!normalised) return { title: "Team play · Shut the Box" };
-
-  const snapshot = await loadTournament(normalised);
+  const snapshot = normalised ? await loadTournament(normalised) : null;
   if (!snapshot) return { title: "Team play · Shut the Box" };
 
   const winners = winningTeams(snapshot);
   const description =
     snapshot.tournament.status === "finished" && winners.length > 0
-      ? `${winners.map((t) => t.name).join(" & ")} won with ${formatAverage(
+      ? `${joinNames(winners.map((t) => t.name))} won with ${formatAverage(
           winners[0]!.average,
         )}.`
       : `Join with the code ${snapshot.tournament.code}.`;
 
-  return {
-    title: `${snapshot.tournament.name} · Team play`,
-    description,
-  };
+  return { title: `${snapshot.tournament.name} · Team play`, description };
 }
 
 /**
@@ -74,8 +51,8 @@ export default async function TournamentPage({ params }: PageProps<"/t/[code]">)
 
   // Anyone past both gates is a colleague, and may run the event. A guest with
   // only the code cannot crown or delete it — the database refuses those two
-  // without a session, so this only decides whether to offer the buttons.
-  const canOrganize = (await hasPin()) && (await getIdentity()) !== null;
+  // without a session — so this only decides whether to offer the buttons.
+  const canOrganize = (await getSession()) !== null;
   const joinUrl = await absoluteUrl(`/t/${normalised}`);
 
   return (

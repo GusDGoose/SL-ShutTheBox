@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { MiniBoard } from "@/components/board/mini-board";
 import { buttonClass } from "@/components/ui/button";
-import { formatAverage, liveMember, type TournamentTeam } from "@/lib/tournament";
+import { MemberScore } from "@/components/tournament/member-score";
+import {
+  formatAverage,
+  formatTeamDetail,
+  liveMember,
+  type TournamentTeam,
+} from "@/lib/tournament";
 import { tilesOf, type Ruleset } from "@/lib/rules";
 
 const PILL: Record<TournamentTeam["status"], { text: string; className: string }> = {
@@ -32,7 +38,8 @@ export function TeamCard({
   isMine: boolean;
 }) {
   const pill = PILL[team.status];
-  const up = liveMember(team);
+  const live = team.live;
+  const up = live ? liveMember(team) : null;
   const tiles = tilesOf(rules);
 
   return (
@@ -51,18 +58,14 @@ export function TeamCard({
         </span>
       </div>
 
-      {team.status === "playing" && up && (
+      {live && up && (
         <p className="flex flex-wrap items-center gap-2 text-sm">
           <span className="font-semibold">{up.name}</span>
           <span className="text-ink-muted">is up</span>
-          {team.live && (
-            <>
-              <MiniBoard tiles={tiles} open={team.live.tiles_open} />
-              <span className="tabular-nums text-ink-muted">
-                {team.live.is_shut ? "📦 shut!" : team.live.score_if_stop}
-              </span>
-            </>
-          )}
+          <MiniBoard tiles={tiles} open={live.tiles_open} />
+          <span className="tabular-nums text-ink-muted">
+            {live.is_shut ? "📦 shut!" : live.score_if_stop}
+          </span>
         </p>
       )}
 
@@ -78,18 +81,11 @@ export function TeamCard({
               }`}
             >
               <span className="truncate">{member.name}</span>
-              <span className="flex shrink-0 items-center gap-2">
-                {member.score !== null && (
-                  <MiniBoard tiles={tiles} open={member.tiles_open} />
-                )}
-                <span className="tabular-nums">
-                  {member.score === null
-                    ? "—"
-                    : member.score === 0
-                      ? "📦 0"
-                      : member.score}
-                </span>
-              </span>
+              {member.score === null ? (
+                <span className="tabular-nums">—</span>
+              ) : (
+                <MemberScore member={member} tiles={tiles} />
+              )}
             </li>
           ))}
         </ul>
@@ -102,8 +98,7 @@ export function TeamCard({
             {formatAverage(team.average)}
             {team.played_count > 0 && (
               <span className="ml-2 text-sm font-normal text-ink-muted">
-                {team.sum} over {team.played_count}
-                {team.played_count === 1 ? " player" : " players"}
+                {formatTeamDetail(team)}
               </span>
             )}
           </p>

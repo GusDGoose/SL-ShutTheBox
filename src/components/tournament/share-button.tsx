@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -29,7 +29,12 @@ export function ShareButton({
   variant?: "primary" | "secondary" | "ghost";
 }) {
   const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useToast();
+
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
 
   async function share() {
     const url = `${window.location.origin}${path}`;
@@ -41,7 +46,10 @@ export function ShareButton({
       await navigator.clipboard.writeText(url);
       setCopied(true);
       toast({ kind: "success", title: "Link copied" });
-      setTimeout(() => setCopied(false), 2000);
+      // One timer: two quick taps must not let the first one flip the label
+      // back early.
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       // A cancelled share sheet lands here too, which is not an error worth
       // shouting about. Only say something when there is nothing to fall back

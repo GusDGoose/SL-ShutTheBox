@@ -154,17 +154,26 @@ export function winningTeams(snapshot: TournamentSnapshot): TournamentTeam[] {
 }
 
 /**
- * The headline. Three or more names take commas — "A & B & C" reads like a law
- * firm, which is the same reason the daily game's celebration does this.
+ * "Foxes & Owls", "Foxes, Owls & Bears". Three or more take commas — "A & B & C"
+ * reads like a law firm, which is why the daily game's celebration does this
+ * too. One function, so the headline and the link preview cannot disagree.
  */
+export function joinNames(names: string[]): string {
+  if (names.length <= 2) return names.join(" & ");
+  return `${names.slice(0, -1).join(", ")} & ${names.at(-1)}`;
+}
+
+/** The headline. */
 export function winnerTitle(names: string[]): string {
   if (names.length === 0) return "Nobody played";
   if (names.length === 1) return `${names[0]} win!`;
-  const shared =
-    names.length > 2
-      ? `${names.slice(0, -1).join(", ")} & ${names.at(-1)}`
-      : names.join(" & ");
-  return `${shared} share it!`;
+  return `${joinNames(names)} share it!`;
+}
+
+/** "112 over 2 players" — the line under every team average. */
+export function formatTeamDetail(team: TournamentTeam): string {
+  const n = team.played_count;
+  return `${team.sum} over ${n} ${n === 1 ? "player" : "players"}`;
 }
 
 /**

@@ -30,7 +30,16 @@ export function StatsTable({
     : "";
 
   return (
-    <div className="overflow-x-auto overscroll-x-contain rounded-[var(--radius-card)] border border-line bg-surface">
+    // Focusable, because it scrolls: a table wider than a phone can only be
+    // scrolled with the arrow keys if something inside the scroll box can take
+    // focus, and a table has nothing that can. Axe's scrollable-region-focusable
+    // rule caught this on the mobile viewport, where every stats table overflows.
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label={caption ?? "Statistics table"}
+      className="overflow-x-auto overscroll-x-contain rounded-[var(--radius-card)] border border-line bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass"
+    >
       <table className="w-full min-w-max border-collapse text-sm">
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead className={sticky}>

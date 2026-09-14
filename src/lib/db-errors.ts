@@ -42,15 +42,22 @@ export function describeDbError(error: MaybePostgrestError): string {
   return FALLBACK;
 }
 
+/**
+ * Prefers the sentence the database itself wrote, when it wrote one.
+ *
+ * The roster and team-play RPCs raise messages for the person at the table —
+ * "hand over scorekeeping first", "add at least one player first" — under the
+ * same STB codes the rest of the flow uses for quite different things. For
+ * those, the database's own sentence is the better copy; anything else falls
+ * back to the table above.
+ */
+export function describeDbErrorVerbatim(error: MaybePostgrestError): string {
+  const own = error?.code?.startsWith("STB") ? error?.message : null;
+  if (!own) return describeDbError(error);
+  return own.charAt(0).toUpperCase() + own.slice(1) + ".";
+}
+
 export function isConflict(error: MaybePostgrestError): boolean {
   const code = error?.code ?? "";
-  return (
-    code === "STB01" ||
-    code === "STB03" ||
-    code === "STB09" ||
-    // The team-play twins: the event moved on under this device, so the answer
-    // is the same — reload rather than retry.
-    code === "STB10" ||
-    code === "STB11"
-  );
+  return code === "STB01" || code === "STB03" || code === "STB09";
 }

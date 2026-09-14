@@ -77,6 +77,17 @@ export async function requireIdentityPage(next: string): Promise<Player> {
 export type Session = { player: Player };
 
 /**
+ * PIN plus a named, active player — or null. The question behind both
+ * requireSession() and requireSessionPage(); they differ only in what happens
+ * when the answer is no.
+ */
+export async function getSession(): Promise<Session | null> {
+  if (!(await hasPin())) return null;
+  const player = await getIdentity();
+  return player ? { player } : null;
+}
+
+/**
  * The session every mutation requires: the PIN, plus a named player to put
  * against the change in the audit trail.
  */
@@ -84,6 +95,20 @@ export async function requireSession(): Promise<Session> {
   if (!(await hasPin())) throw new SessionError("Enter the team PIN first.");
   const player = await getIdentity();
   if (!player) throw new SessionError("Tell us who you are first.");
+  return { player };
+}
+
+/**
+ * For a page the Proxy does NOT gate — team play's /t/new is the first — that
+ * still needs a colleague rather than a guest. Sends them through the two gates
+ * in the right order: the PIN first, because /whoami sits behind it and would
+ * only bounce them straight back.
+ */
+export async function requireSessionPage(next: string): Promise<Session> {
+  const target = encodeURIComponent(next);
+  if (!(await hasPin())) redirect(`/pin?next=${target}`);
+  const player = await getIdentity();
+  if (!player) redirect(`/whoami?next=${target}`);
   return { player };
 }
 

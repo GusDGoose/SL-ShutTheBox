@@ -15,7 +15,9 @@
 export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const CODE_LENGTH = 6;
 
-const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
+// Built from the two constants above rather than spelled out again, so the
+// test that checks the alphabet is checking one source of truth, not two.
+const CODE_PATTERN = new RegExp(`^[${CODE_ALPHABET}]{${CODE_LENGTH}}$`);
 
 /**
  * Turns whatever somebody typed or pasted into the canonical code, or null if
@@ -25,10 +27,6 @@ const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
 export function normalizeCode(input: string | null | undefined): string | null {
   const cleaned = (input ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   return CODE_PATTERN.test(cleaned) ? cleaned : null;
-}
-
-export function isValidCode(input: string | null | undefined): boolean {
-  return normalizeCode(input) !== null;
 }
 
 /**

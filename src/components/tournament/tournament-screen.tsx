@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { buttonClass } from "@/components/ui/button";
+import { DeadEnd } from "@/components/ui/dead-end";
 import { Lobby } from "@/components/tournament/lobby";
 import { Results } from "@/components/tournament/results";
 import type { TournamentSnapshot } from "@/lib/tournament";
@@ -33,20 +34,16 @@ export function TournamentScreen({
 
   if (gone) {
     return (
-      <main className="mx-auto flex max-w-md flex-col items-center gap-4 p-10 text-center">
-        <span aria-hidden className="text-5xl">
-          🫥
-        </span>
-        <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold">
-          This team play was deleted.
-        </h1>
-        <p className="text-sm text-ink-muted">
-          Whoever set it up has cleared it away.
-        </p>
-        <Link href="/" className={buttonClass("secondary")}>
-          Shut the Box
-        </Link>
-      </main>
+      <DeadEnd
+        art="🫥"
+        title="This team play was deleted."
+        body="Whoever set it up has cleared it away."
+        cta={
+          <Link href="/" className={buttonClass("secondary")}>
+            Shut the Box
+          </Link>
+        }
+      />
     );
   }
 

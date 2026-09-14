@@ -2,15 +2,16 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { MiniBoard } from "@/components/board/mini-board";
 import { ScoreKeypad } from "@/components/board/score-keypad";
 import { Button, buttonClass } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { MemberList } from "@/components/tournament/member-list";
+import { MemberScore } from "@/components/tournament/member-score";
 import { correctMember } from "@/app/(public)/t/actions";
 import { maxScoreOf, tilesOf, type Ruleset } from "@/lib/rules";
 import {
   formatAverage,
+  formatTeamDetail,
   type TournamentSnapshot,
   type TournamentTeam,
 } from "@/lib/tournament";
@@ -58,11 +59,7 @@ export function TeamDone({
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-bold">
           Correcting {member.name}
         </h1>
-        <ScoreKeypad
-          max={maxScoreOf(rules)}
-          submitLabel="Save score"
-          onSubmit={save}
-        />
+        <ScoreKeypad max={maxScoreOf(rules)} submitLabel="Save score" onSubmit={save} />
         <Button
           variant="ghost"
           className="self-start"
@@ -88,10 +85,7 @@ export function TeamDone({
         <p className="font-[family-name:var(--font-display)] text-5xl font-extrabold tabular-nums">
           {formatAverage(team.average)}
         </p>
-        <p className="text-sm text-ink-muted">
-          {team.sum} over {team.played_count}
-          {team.played_count === 1 ? " player" : " players"}
-        </p>
+        <p className="text-sm text-ink-muted">{formatTeamDetail(team)}</p>
       </section>
 
       <section className="flex flex-col gap-2">
@@ -106,13 +100,8 @@ export function TeamDone({
                   onClick={() => setCorrecting(m.id)}
                   className="flex w-full items-center justify-between rounded-[var(--radius-control)] border border-line px-4 py-3 text-left transition-colors hover:border-brass/60"
                 >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="truncate font-medium">{m.name}</span>
-                    <MiniBoard tiles={tiles} open={m.tiles_open} />
-                  </span>
-                  <span className="font-[family-name:var(--font-display)] text-xl font-bold tabular-nums">
-                    {m.score === 0 ? "📦 0" : m.score}
-                  </span>
+                  <span className="truncate font-medium">{m.name}</span>
+                  <MemberScore member={m} tiles={tiles} size="lg" />
                 </button>
               </li>
             ))}
@@ -128,7 +117,6 @@ export function TeamDone({
         rules={rules}
         onSnapshot={onSnapshot}
         heading="Somebody else wants a go?"
-        addLabel="Add"
       />
 
       <Link href={`/t/${code}`} className={`${buttonClass("primary")} self-start`}>

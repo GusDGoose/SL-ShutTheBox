@@ -26,7 +26,14 @@ export function H2HMatrix({
   const byPair = new Map(rows.map((r) => [`${r.a_id}:${r.b_id}`, r]));
 
   return (
-    <div className="overflow-x-auto overscroll-x-contain rounded-[var(--radius-card)] border border-line bg-surface">
+    // Focusable for the same reason as StatsTable: it scrolls, and nothing in a
+    // table can take focus for the arrow keys.
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label="Head to head"
+      className="overflow-x-auto overscroll-x-contain rounded-[var(--radius-card)] border border-line bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass"
+    >
       <table className="w-full min-w-max border-collapse text-sm">
         <caption className="sr-only">
           Head to head record, read as wins–losses for the player named in each

@@ -1,17 +1,17 @@
 "use client";
 
 import { type ReactNode, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { ConnectionDot } from "@/components/game/connection-dot";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/components/ui/toast";
 import { CreateTeamForm } from "@/components/tournament/create-team-form";
+import { DeleteTournamentButton } from "@/components/tournament/delete-tournament-button";
 import { TeamCard } from "@/components/tournament/team-card";
 import { useMyTeam } from "@/components/tournament/my-team";
-import { deleteTournament, finishTournament } from "@/app/(public)/t/actions";
-import { allTeamsDone, type TournamentSnapshot } from "@/lib/tournament";
+import { finishTournament } from "@/app/(public)/t/actions";
+import { allTeamsDone, joinNames, type TournamentSnapshot } from "@/lib/tournament";
 import type { Connection } from "@/lib/use-live-game";
 
 /**
@@ -36,9 +36,8 @@ export function Lobby({
   canOrganize: boolean;
   onSnapshot: (snapshot: TournamentSnapshot) => void;
 }) {
-  const [confirming, setConfirming] = useState<"finish" | "delete" | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
-  const router = useRouter();
   const toast = useToast();
   const myTeam = useMyTeam(snapshot.tournament.code);
 
@@ -47,12 +46,8 @@ export function Lobby({
   const everybodyDone = allTeamsDone(snapshot);
   const anybodyPlayed = counts.ranked > 0;
 
-  const unfinished = snapshot.teams
-    .filter((t) => t.status !== "done")
-    .map((t) => t.name);
-
   function handleFinish() {
-    setConfirming(null);
+    setConfirming(false);
     startTransition(async () => {
       const res = await finishTournament(code);
       if (!res.ok) {
@@ -60,18 +55,6 @@ export function Lobby({
         return;
       }
       onSnapshot(res.snapshot);
-    });
-  }
-
-  function handleDelete() {
-    setConfirming(null);
-    startTransition(async () => {
-      const res = await deleteTournament(code);
-      if (!res.ok) {
-        toast({ kind: "error", title: res.error });
-        return;
-      }
-      router.push("/");
     });
   }
 
@@ -131,47 +114,34 @@ export function Lobby({
               <Button
                 size="lg"
                 disabled={pending || !anybodyPlayed}
-                onClick={() =>
-                  everybodyDone ? handleFinish() : setConfirming("finish")
-                }
+                onClick={() => (everybodyDone ? handleFinish() : setConfirming(true))}
               >
                 {pending ? "Crowning…" : "Finish & crown 👑"}
               </Button>
-              <Button
-                variant="ghost"
-                disabled={pending}
-                onClick={() => setConfirming("delete")}
-              >
-                Delete this team play
-              </Button>
+              <DeleteTournamentButton
+                code={code}
+                body="Every team, every score and every board goes with it. This cannot be undone."
+              />
             </div>
+
+            <ConfirmDialog
+              open={confirming}
+              title="Crown it now?"
+              body={unfinishedWarning(snapshot)}
+              confirmLabel="Finish & crown"
+              onConfirm={handleFinish}
+              onCancel={() => setConfirming(false)}
+            />
           </section>
         )}
       </div>
-
-      <ConfirmDialog
-        open={confirming === "finish"}
-        title="Crown it now?"
-        body={
-          unfinished.length > 0
-            ? `${unfinished.join(", ")} ${
-                unfinished.length === 1 ? "has" : "have"
-              } not finished. Only the rounds already played will count towards their score.`
-            : "This ends the event for everybody."
-        }
-        confirmLabel="Finish & crown"
-        onConfirm={handleFinish}
-        onCancel={() => setConfirming(null)}
-      />
-      <ConfirmDialog
-        open={confirming === "delete"}
-        title="Delete this team play?"
-        body="Every team, every score and every board goes with it. This cannot be undone."
-        confirmLabel="Delete"
-        danger
-        onConfirm={handleDelete}
-        onCancel={() => setConfirming(null)}
-      />
     </div>
   );
+}
+
+/** Only shown when a team is still mid-way, which is the only time it is needed. */
+function unfinishedWarning(snapshot: TournamentSnapshot): string {
+  const names = snapshot.teams.filter((t) => t.status !== "done").map((t) => t.name);
+  if (names.length === 0) return "This ends the event for everybody.";
+  return `${joinNames(names)} ${names.length === 1 ? "has" : "have"} not finished. Only the rounds already played will count towards their score.`;
 }

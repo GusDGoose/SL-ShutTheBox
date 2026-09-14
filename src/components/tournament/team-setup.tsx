@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 import { Button, buttonClass } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
-import { EmojiPicker } from "@/components/tournament/emoji-picker";
 import { MemberList } from "@/components/tournament/member-list";
 import { forgetMyTeam } from "@/components/tournament/my-team";
+import { TeamFields, type TeamFieldValues } from "@/components/tournament/team-fields";
 import { deleteTeam, startTeam, updateTeam } from "@/app/(public)/t/actions";
 import type { TournamentSnapshot, TournamentTeam } from "@/lib/tournament";
 import type { Ruleset } from "@/lib/rules";
@@ -29,33 +29,11 @@ export function TeamSetup({
   onSnapshot: (snapshot: TournamentSnapshot) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(team.name);
-  const [emoji, setEmoji] = useState(team.emoji);
-  const [songUrl, setSongUrl] = useState(team.song_url ?? "");
-  const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
-  const router = useRouter();
   const toast = useToast();
 
   const unplayed = team.members.filter((m) => m.score === null).length;
   const resuming = team.played_count > 0;
-
-  function save() {
-    startTransition(async () => {
-      const res = await updateTeam(code, team.id, {
-        name: name.trim() || team.name,
-        emoji,
-        songUrl: songUrl.trim() || null,
-      });
-      if (!res.ok) {
-        toast({ kind: "error", title: res.error });
-        return;
-      }
-      onSnapshot(res.snapshot);
-      setEditing(false);
-      toast({ kind: "success", title: "Saved" });
-    });
-  }
 
   function start() {
     startTransition(async () => {
@@ -65,19 +43,6 @@ export function TeamSetup({
         return;
       }
       onSnapshot(res.snapshot);
-    });
-  }
-
-  function handleDelete() {
-    setConfirming(false);
-    startTransition(async () => {
-      const res = await deleteTeam(code, team.id);
-      if (!res.ok) {
-        toast({ kind: "error", title: res.error });
-        return;
-      }
-      forgetMyTeam(code);
-      router.push(`/t/${code}`);
     });
   }
 
@@ -95,59 +60,16 @@ export function TeamSetup({
         </Button>
       </div>
 
+      {/* Mounted only while open, so it always starts from what the server
+          has now — not from whatever was typed before "Close". */}
       {editing && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            save();
-          }}
-          className="flex flex-col gap-4 rounded-[var(--radius-card)] border border-line bg-surface p-4"
-        >
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Team name
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={40}
-              autoComplete="off"
-              className="min-h-11 rounded-[var(--radius-control)] border border-line bg-canvas px-3 text-base"
-            />
-          </label>
-
-          <EmojiPicker value={emoji} onChange={setEmoji} />
-
-          <label className="flex flex-col gap-1 text-sm font-medium">
-            Victory song{" "}
-            <span className="font-normal text-ink-muted">(optional)</span>
-            <input
-              value={songUrl}
-              onChange={(event) => setSongUrl(event.target.value)}
-              type="text"
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="https://youtu.be/…"
-              className="min-h-11 rounded-[var(--radius-control)] border border-line bg-canvas px-3 text-base"
-            />
-            <span className="text-xs text-ink-muted">
-              You can still set this while you play — it only matters if you win.
-            </span>
-          </label>
-
-          <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : "Save"}
-            </Button>
-            {!resuming && (
-              <Button
-                variant="ghost"
-                disabled={pending}
-                onClick={() => setConfirming(true)}
-              >
-                Delete this team
-              </Button>
-            )}
-          </div>
-        </form>
+        <EditTeamForm
+          code={code}
+          team={team}
+          canDelete={!resuming}
+          onSnapshot={onSnapshot}
+          onSaved={() => setEditing(false)}
+        />
       )}
 
       <MemberList
@@ -180,6 +102,87 @@ export function TeamSetup({
       <p className="text-xs text-ink-muted">
         One phone per team keeps the score. Everybody else can watch the lobby.
       </p>
+    </div>
+  );
+}
+
+function EditTeamForm({
+  code,
+  team,
+  canDelete,
+  onSnapshot,
+  onSaved,
+}: {
+  code: string;
+  team: TournamentTeam;
+  canDelete: boolean;
+  onSnapshot: (snapshot: TournamentSnapshot) => void;
+  onSaved: () => void;
+}) {
+  const [values, setValues] = useState<TeamFieldValues>({
+    name: team.name,
+    emoji: team.emoji,
+    songUrl: team.song_url ?? "",
+  });
+  const [confirming, setConfirming] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const toast = useToast();
+
+  function save() {
+    startTransition(async () => {
+      const res = await updateTeam(code, team.id, {
+        name: values.name.trim() || team.name,
+        emoji: values.emoji,
+        songUrl: values.songUrl.trim() || null,
+      });
+      if (!res.ok) {
+        toast({ kind: "error", title: res.error });
+        return;
+      }
+      onSnapshot(res.snapshot);
+      toast({ kind: "success", title: "Saved" });
+      onSaved();
+    });
+  }
+
+  function handleDelete() {
+    setConfirming(false);
+    startTransition(async () => {
+      const res = await deleteTeam(code, team.id);
+      if (!res.ok) {
+        toast({ kind: "error", title: res.error });
+        return;
+      }
+      forgetMyTeam(code);
+      router.push(`/t/${code}`);
+    });
+  }
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        save();
+      }}
+      className="flex flex-col gap-4 rounded-[var(--radius-card)] border border-line bg-surface p-4"
+    >
+      <TeamFields
+        values={values}
+        onChange={setValues}
+        songHint="You can still set this while you play — it only matters if you win."
+      />
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={pending}>
+          {pending ? "Saving…" : "Save"}
+        </Button>
+        {canDelete && (
+          <Button variant="ghost" disabled={pending} onClick={() => setConfirming(true)}>
+            Delete this team
+          </Button>
+        )}
+      </div>
 
       <ConfirmDialog
         open={confirming}
@@ -190,6 +193,6 @@ export function TeamSetup({
         onConfirm={handleDelete}
         onCancel={() => setConfirming(false)}
       />
-    </div>
+    </form>
   );
 }

@@ -80,8 +80,14 @@ export function useLiveTournament(code: string, initial: TournamentSnapshot) {
   }, [code, apply]);
 
   const tournamentId = snapshot.tournament.id;
+  const finished = snapshot.tournament.status === "finished";
 
   useEffect(() => {
+    // Nothing changes after the crown except deletion, which a reload will
+    // notice. Fifty phones parked on the result page polling a static value
+    // every five seconds is the one waste here worth three lines.
+    if (finished) return;
+
     const supabase = supabaseBrowser();
     let cancelled = false;
     let poll: ReturnType<typeof setInterval> | null = null;
@@ -160,7 +166,7 @@ export function useLiveTournament(code: string, initial: TournamentSnapshot) {
       document.removeEventListener("visibilitychange", onVisible);
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [tournamentId, apply, refetch]);
+  }, [tournamentId, finished, apply, refetch]);
 
   return { snapshot, connection, gone, apply, refetch };
 }

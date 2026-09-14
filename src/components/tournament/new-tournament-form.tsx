@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { inputClass } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { createTournament } from "@/app/(public)/t/actions";
 
@@ -43,7 +44,7 @@ export function NewTournamentForm({ defaultName }: { defaultName: string }) {
           onChange={(event) => setName(event.target.value)}
           maxLength={60}
           autoComplete="off"
-          className="min-h-11 rounded-[var(--radius-control)] border border-line bg-canvas px-3 text-base"
+          className={inputClass}
         />
         <span className="text-xs text-ink-muted">
           Everybody who joins sees this.

@@ -63,3 +63,15 @@ export function rpc<K extends RpcName>(
 ) {
   return sb.rpc(name, args as RpcArgs<K>);
 }
+
+/**
+ * A route param that must be a uuid. Passed to Postgres raw, a typo raises
+ * 22P02 and the user gets a 500 instead of "not found" — which is why every
+ * dynamic page checks first.
+ */
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}

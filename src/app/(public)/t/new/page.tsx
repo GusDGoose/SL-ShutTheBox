@@ -1,7 +1,5 @@
-import { redirect } from "next/navigation";
-import { hasPin, requireIdentityPage } from "@/lib/auth";
-import { dayLabel } from "@/lib/dates";
-import { stockholmToday } from "@/lib/dates";
+import { requireSessionPage } from "@/lib/auth";
+import { dayLabel, stockholmToday } from "@/lib/dates";
 import { NewTournamentForm } from "@/components/tournament/new-tournament-form";
 
 export const dynamic = "force-dynamic";
@@ -13,15 +11,11 @@ export const metadata = { title: "New team play · Shut the Box" };
  *
  * [concept: the exempt route that gates itself] /t/* skips both proxy gates so
  * that people with no PIN can join an event. This page creates one, against a
- * real player who will be named in the audit trail, so it checks the PIN and
- * the identity itself. Order matters: the PIN first, because /whoami is behind
- * it and sending somebody there without it is a loop.
+ * real player who will be named in the audit trail, so it asks for the whole
+ * session itself.
  */
 export default async function NewTournamentPage() {
-  if (!(await hasPin())) redirect("/pin?next=%2Ft%2Fnew");
-  await requireIdentityPage("/t/new");
-
-  const today = stockholmToday();
+  await requireSessionPage("/t/new");
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 p-4 sm:p-6">
@@ -36,7 +30,7 @@ export default async function NewTournamentPage() {
         </p>
       </div>
 
-      <NewTournamentForm defaultName={`Team play — ${dayLabel(today)}`} />
+      <NewTournamentForm defaultName={`Team play — ${dayLabel(stockholmToday())}`} />
 
       <ol className="flex flex-col gap-2 rounded-[var(--radius-card)] border border-line bg-surface p-4 text-sm text-ink-muted">
         <li>1. Put this page on the big screen and read out the code.</li>

@@ -1,40 +1,26 @@
 "use client";
 
-import confetti from "canvas-confetti";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { MiniBoard } from "@/components/board/mini-board";
 import { AnthemStage, type Anthem } from "@/components/game/anthem-stage";
 import { Button, buttonClass } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useSfx } from "@/components/ui/audio-provider";
-import { useToast } from "@/components/ui/toast";
+import { DeleteTournamentButton } from "@/components/tournament/delete-tournament-button";
+import { MemberScore } from "@/components/tournament/member-score";
 import { ShareButton } from "@/components/tournament/share-button";
-import { deleteTournament } from "@/app/(public)/t/actions";
 import { resolveClip } from "@/lib/audio/clip-source";
+import { burst } from "@/lib/confetti";
 import { tilesOf } from "@/lib/rules";
 import {
   didNotFinish,
   formatAverage,
+  formatTeamDetail,
   rankedTeams,
   winnerTitle,
   winningTeams,
   type TournamentSnapshot,
   type TournamentTeam,
 } from "@/lib/tournament";
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-}
-
-function burst(origin: { x: number; y: number }) {
-  if (prefersReducedMotion()) return;
-  confetti({ particleCount: 120, spread: 75, origin });
-}
 
 /**
  * A team's song, in the shape the anthem stage already understands.
@@ -71,18 +57,10 @@ export function Results({
   canOrganize: boolean;
 }) {
   const [crowned, setCrowned] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [pending, startTransition] = useTransition();
   const heading = useRef<HTMLHeadingElement>(null);
   const { play } = useSfx();
-  const toast = useToast();
-  const router = useRouter();
 
-  const { code, rules, name } = {
-    code: snapshot.tournament.code,
-    rules: snapshot.tournament.rules,
-    name: snapshot.tournament.name,
-  };
+  const { code, rules, name } = snapshot.tournament;
   const tiles = tilesOf(rules);
   const ranked = rankedTeams(snapshot);
   const unranked = didNotFinish(snapshot);
@@ -97,18 +75,24 @@ export function Results({
     return () => timers.forEach(clearTimeout);
   }, []);
 
-  const withSongs = winners.filter((t) => clipFor(t) !== null);
-  const withoutSongs = winners.filter((t) => clipFor(t) === null);
-
   // Only teams that HAVE a song go to the stage. Its own "no song yet" copy
   // links to /players, which is a page a guest at a team day cannot reach.
-  const anthems: Anthem[] = withSongs.map((team) => ({
-    playerId: team.id,
-    name: team.name,
-    emoji: team.emoji,
-    clip: clipFor(team),
-    songUrl: team.song_url,
-  }));
+  const anthems: Anthem[] = [];
+  const withoutSongs: TournamentTeam[] = [];
+  for (const team of winners) {
+    const clip = clipFor(team);
+    if (clip) {
+      anthems.push({
+        playerId: team.id,
+        name: team.name,
+        emoji: team.emoji,
+        clip,
+        songUrl: team.song_url,
+      });
+    } else {
+      withoutSongs.push(team);
+    }
+  }
 
   function crown() {
     setCrowned(true);
@@ -116,18 +100,6 @@ export function Results({
     burst({ x: 0.5, y: 0.4 });
     setTimeout(() => burst({ x: 0.3, y: 0.5 }), 300);
     setTimeout(() => burst({ x: 0.7, y: 0.5 }), 600);
-  }
-
-  function handleDelete() {
-    setConfirming(false);
-    startTransition(async () => {
-      const res = await deleteTournament(code);
-      if (!res.ok) {
-        toast({ kind: "error", title: res.error });
-        return;
-      }
-      router.push("/");
-    });
   }
 
   return (
@@ -150,8 +122,7 @@ export function Results({
         <div className="flex flex-wrap justify-center gap-3">
           {winners.map((team) => (
             <span key={team.id} className="text-lg">
-              👑 <span aria-hidden>{team.emoji}</span>{" "}
-              <strong>{team.name}</strong>{" "}
+              👑 <span aria-hidden>{team.emoji}</span> <strong>{team.name}</strong>{" "}
               <span className="tabular-nums text-ink-muted">
                 {formatAverage(team.average)}
               </span>
@@ -202,8 +173,7 @@ export function Results({
                   {formatAverage(team.average)}
                 </span>
                 <span className="block text-xs text-ink-muted">
-                  {team.sum} over {team.played_count}
-                  {team.played_count === 1 ? " player" : " players"}
+                  {formatTeamDetail(team)}
                 </span>
               </span>
             </div>
@@ -217,12 +187,7 @@ export function Results({
                   {member.score === null ? (
                     <span className="text-xs text-ink-muted">did not play</span>
                   ) : (
-                    <>
-                      <MiniBoard tiles={tiles} open={member.tiles_open} />
-                      <span className="font-semibold tabular-nums">
-                        {member.score === 0 ? "📦 0" : member.score}
-                      </span>
-                    </>
+                    <MemberScore member={member} tiles={tiles} />
                   )}
                 </li>
               ))}
@@ -263,26 +228,13 @@ export function Results({
             <Link href="/t/new" className={buttonClass("secondary")}>
               New team play
             </Link>
-            <Button
-              variant="ghost"
-              disabled={pending}
-              onClick={() => setConfirming(true)}
-            >
-              Delete this team play
-            </Button>
+            <DeleteTournamentButton
+              code={code}
+              body="The results go with it, and the link stops working for everybody. This cannot be undone."
+            />
           </>
         )}
       </div>
-
-      <ConfirmDialog
-        open={confirming}
-        title="Delete this team play?"
-        body="The results go with it, and the link stops working for everybody. This cannot be undone."
-        confirmLabel="Delete"
-        danger
-        onConfirm={handleDelete}
-        onCancel={() => setConfirming(false)}
-      />
     </main>
   );
 }
