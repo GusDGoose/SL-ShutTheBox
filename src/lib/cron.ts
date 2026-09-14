@@ -11,7 +11,7 @@ import type { Json } from "@/lib/database.types";
  * `claim` inserts the day's row and returns false if it was already there.
  * The insert is the lock — a check-then-act would race with itself.
  */
-export type CronJob = "morning" | "afternoon";
+export type CronJob = "morning" | "prematch";
 
 export async function claimCronRun(
   job: CronJob,

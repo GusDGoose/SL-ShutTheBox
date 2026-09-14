@@ -3,7 +3,7 @@ import { supabaseAdmin } from "./supabase";
 import {
   digestBlocks,
   fikaBlocks,
-  nudgeBlocks,
+  prematchBlocks,
   winnerBlocks,
   type CardBlock,
   type Digest,
@@ -42,7 +42,7 @@ export async function postCard(
 
   const appUrl = process.env.APP_URL;
   const openApp: Action[] = appUrl
-    ? [{ title: "Open the scoreboard", url: appUrl }]
+    ? [{ title: "Öppna tavlan", url: appUrl }]
     : [];
   const all = [...actions, ...openApp];
 
@@ -161,12 +161,12 @@ export async function postDigest(digest: Digest): Promise<boolean> {
   return postCard(digestBlocks(digest, await currentFika()));
 }
 
-/** Early afternoon on a day nobody has played yet. */
-export async function postNudge(): Promise<boolean> {
+/** 12:40 on a weekday — just before the box comes out. */
+export async function postPrematch(): Promise<boolean> {
   const appUrl = process.env.APP_URL;
   return postCard(
-    nudgeBlocks(await currentFika()),
-    appUrl ? [{ title: "Start a game 🎲", url: `${appUrl}/play` }] : [],
+    prematchBlocks(await currentFika()),
+    appUrl ? [{ title: "Starta matchen 🎲", url: `${appUrl}/play` }] : [],
   );
 }
 
@@ -181,6 +181,6 @@ export async function postFikaCard(duty: {
   const appUrl = process.env.APP_URL;
   return postCard(
     fikaBlocks(duty),
-    appUrl ? [{ title: "The rota ☕", url: `${appUrl}/fika` }] : [],
+    appUrl ? [{ title: "Fikaschemat ☕", url: `${appUrl}/fika` }] : [],
   );
 }

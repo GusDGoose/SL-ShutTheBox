@@ -303,21 +303,54 @@ out of three. A week nobody eligible played falls back to random and the card
 says so. Skipping keeps your place in the cycle but takes you out of that
 week.
 
-Two Vercel cron jobs drive it, both requiring `Authorization: Bearer
-$CRON_SECRET`:
+The cards it posts are **in Swedish** — they land in a Swedish office's Teams
+channel. The app itself stays English; `src/lib/teams-cards.ts` is the only
+file with Swedish copy, and it is where the plurals and the decimal comma
+live.
 
-| | when | what |
-|---|---|---|
-| `/api/cron/morning` | 05:00 UTC, Mon–Fri | abandons games left running; **Mondays** also draws the rota and posts last week's digest |
-| `/api/cron/afternoon` | 12:00 UTC, Mon–Fri | if nobody has played yet, nudges the channel |
+## When things get posted
 
-Both take `?on=YYYY-MM-DD` to run as if it were that date — the recovery path
-for a Monday the cron missed, and the only way to exercise the Monday branch
-on a Thursday. One `cron_runs` row per (job, day) is the lock, so a re-run of
-a day that already ran is a no-op. Hobby fires anywhere inside the scheduled
-hour and gives no exactly-once guarantee, which is why the guard exists at
-all. Writing to the database daily also keeps the free Supabase project from
-pausing after seven idle days.
+| When (Stockholm) | What |
+|---|---|
+| every crowned game | 👑 the winner card, with the fika line |
+| weekdays 12:40 | 🎲 "Snart match!" — five minutes before the box comes out |
+| Mondays 10:00 | 🎲 last week's digest, and ☕ who is buying fika |
+
+**The schedule lives in the database, not in `vercel.json`.** Vercel's Hobby
+plan allows two cron jobs, once a day each, fired somewhere inside the
+scheduled hour — which can express neither "12:40" nor "10:00 Stockholm, year
+round", because a single UTC hour is the right local time for only half the
+year. `0020_schedule.sql` uses pg_cron instead, which has minute precision
+and no job limit.
+
+pg_cron still runs on UTC, so daylight saving is handled the only way it can
+be: each job is scheduled at **both** candidate UTC hours, and
+`run_scheduled_job()` does nothing unless the Stockholm wall clock reads the
+intended hour. In summer the earlier firing works and the later one declines;
+in winter it is the other way round. Nothing to change twice a year.
+
+The jobs call the app's own endpoints over HTTP (`pg_net`), so what a card
+says stays in tested TypeScript; the database only decides *when*. Both
+endpoints take `?on=YYYY-MM-DD` to re-run a day that was missed, and one
+`cron_runs` row per (job, day) is the lock, so a re-run or a double fire is a
+no-op.
+
+Production needs two things the migration deliberately does not carry, because
+migrations are in git:
+
+```sql
+insert into cron_settings (app_url) values ('https://sl-shut-the-box-opal.vercel.app')
+  on conflict (id) do update set app_url = excluded.app_url;
+select vault.create_secret('<the CRON_SECRET from Vercel>', 'cron_secret', 'bearer token for the scheduled jobs');
+```
+
+To see what the scheduler has been doing:
+
+```sql
+select j.jobname, r.status, r.return_message, r.start_time
+  from cron.job_run_details r join cron.job j using (jobid)
+ order by r.start_time desc limit 20;
+```
 
 ## Still to come
 

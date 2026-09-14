@@ -56,7 +56,7 @@ test.describe("locked down", () => {
   });
 
   test("the cron routes refuse a caller with no secret", async ({ request }) => {
-    for (const path of ["/api/cron/morning", "/api/cron/afternoon"]) {
+    for (const path of ["/api/cron/morning", "/api/cron/prematch"]) {
       const res = await request.get(path);
       expect(res.status(), `${path} is unprotected`).toBe(401);
     }

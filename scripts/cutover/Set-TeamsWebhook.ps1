@@ -117,9 +117,9 @@ $card = @{
                 version   = '1.4'
                 body      = @(
                     @{ type = 'TextBlock'; size = 'Large'; weight = 'Bolder'; wrap = $true
-                       text = '🎲 Shut the Box is wired up' },
+                       text = '🎲 Shut the Box är igång' },
                     @{ type = 'TextBlock'; wrap = $true
-                       text = 'This is a test card. Winner announcements will look like this — name, score, streak, and 📦 when the box goes down.' }
+                       text = 'Det här är ett testkort. Vinnarkorten ser ut så här — namn, poäng, svit, och 📦 när lådan stängs.' }
                 )
             }
         }

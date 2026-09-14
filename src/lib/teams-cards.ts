@@ -7,6 +7,13 @@
  * are the parts that get things wrong in front of the whole team, so they
  * live here where a test can read them.
  *
+ * [concept: the cards are Swedish, the app is English] Gustav asked for the
+ * cards in Swedish on 2026-09-14. They land in a Swedish office's Teams
+ * channel and are read by everyone, whereas the app itself stays English by
+ * the decision made at the start of the rebuild. So this file — and only this
+ * file — carries Swedish copy, including Swedish plurals (ett spel / två
+ * spel) and the decimal comma.
+ *
  * [concept: Adaptive Card] A Teams *Workflows* webhook takes a card, not
  * `{"text": ...}`. Blocks are plain objects; the envelope is built in teams.ts.
  */
@@ -36,11 +43,21 @@ const text = (t: string, extra: CardBlock = {}): CardBlock => ({
 const heading = (t: string): CardBlock =>
   text(t, { size: "Large", weight: "Bolder" });
 
-/** "☕ This week: 🦊 Alice buys fika" — appended to whatever card is going out. */
+/** Swedish writes 0,83 rather than 0.83. */
+function decimal(n: number, places = 2): string {
+  return n.toFixed(places).replace(".", ",");
+}
+
+/** "3 spel" / "1 spel" — the noun does not change, only the participle does. */
+function games(n: number): string {
+  return `${n} spel`;
+}
+
+/** "☕ Denna vecka: 🦊 Alice bjuder på fika" — appended to every card. */
 export function fikaLine(fika: FikaLine): CardBlock[] {
   if (!fika) return [];
   return [
-    text(`☕ This week: ${fika.emoji} ${fika.name} buys fika`, {
+    text(`☕ Denna vecka: ${fika.emoji} ${fika.name} bjuder på fika`, {
       isSubtle: true,
       spacing: "Small",
     }),
@@ -59,17 +76,17 @@ export function winnerBlocks(winners: Winner[], fika: FikaLine): CardBlock[] {
   const blocks: CardBlock[] = [
     heading(
       winners.length > 1
-        ? `👑 ${names} share today's Shut the Box!`
-        : `👑 ${names} won today's Shut the Box!`,
+        ? `👑 ${names} delar på dagens seger!`
+        : `👑 ${names} vann dagens Shut the Box!`,
     ),
     text(
       shutBox
-        ? `Winning score: ${score} — 📦 THE BOX WAS SHUT!`
-        : `Winning score: ${score}`,
+        ? `Vinnande poäng: ${score} — 📦 LÅDAN STÄNGDES!`
+        : `Vinnande poäng: ${score}`,
     ),
   ];
   // A streak of one is just "won today", which the heading already said.
-  if (maxStreak >= 2) blocks.push(text(`🔥 ${maxStreak} days running`));
+  if (maxStreak >= 2) blocks.push(text(`🔥 ${maxStreak} dagar i rad`));
   return [...blocks, ...fikaLine(fika)];
 }
 
@@ -85,48 +102,59 @@ export type Digest = {
 
 /** Monday morning: how last week went. */
 export function digestBlocks(d: Digest, fika: FikaLine): CardBlock[] {
-  const blocks: CardBlock[] = [heading("🎲 Last week at the box")];
+  const blocks: CardBlock[] = [heading("🎲 Förra veckan vid lådan")];
 
   if (d.gamesPlayed === 0) {
-    blocks.push(text("Not a single game was played. The box is getting dusty."));
+    blocks.push(text("Inte ett enda spel spelades. Lådan börjar bli dammig."));
     return [...blocks, ...fikaLine(fika)];
   }
 
   blocks.push(
-    text(`${d.gamesPlayed} game${d.gamesPlayed === 1 ? "" : "s"} played.`),
+    text(`${games(d.gamesPlayed)} ${d.gamesPlayed === 1 ? "spelat" : "spelade"}.`),
   );
   if (d.champion) {
     blocks.push(
       text(
-        `🏆 ${d.champion.emoji} ${d.champion.name} won the week with ${d.champion.days} day${d.champion.days === 1 ? "" : "s"}.`,
+        `🏆 ${d.champion.emoji} ${d.champion.name} vann veckan med ${d.champion.days} ${d.champion.days === 1 ? "dag" : "dagar"}.`,
       ),
     );
   }
   if (d.longestStreak && d.longestStreak.days >= 2) {
     blocks.push(
       text(
-        `🔥 ${d.longestStreak.emoji} ${d.longestStreak.name} is on ${d.longestStreak.days} days running.`,
+        `🔥 ${d.longestStreak.emoji} ${d.longestStreak.name} är uppe i ${d.longestStreak.days} dagar i rad.`,
       ),
     );
   }
   if (d.topGainer && d.topGainer.delta > 0) {
     blocks.push(
       text(
-        `📈 Biggest climber: ${d.topGainer.emoji} ${d.topGainer.name}, +${Math.round(d.topGainer.delta)} rating.`,
+        `📈 Störst klättring: ${d.topGainer.emoji} ${d.topGainer.name}, +${Math.round(d.topGainer.delta)} i rating.`,
       ),
     );
   }
   for (const b of d.badges.slice(0, 5)) {
-    blocks.push(text(`🏅 ${b.emoji} ${b.name} earned ${b.badge}.`));
+    blocks.push(text(`🏅 ${b.emoji} ${b.name} tog utmärkelsen ${b.badge}.`));
   }
   return [...blocks, ...fikaLine(fika)];
 }
 
-/** Early afternoon, on a day nobody has played. */
-export function nudgeBlocks(fika: FikaLine): CardBlock[] {
+/**
+ * 12:40 — just before the box comes out.
+ *
+ * This replaces an "is anyone playing?" nudge that fired at 14:00, after the
+ * fact, which Gustav dropped on 2026-09-14: a reminder is only worth sending
+ * while there is still time to walk over. That is also why it needs the
+ * minute precision Vercel Hobby cron cannot give and pg_cron can.
+ *
+ * "om några minuter" rather than "om 5 minuter" on purpose — it stays true
+ * if a run is ever a minute or two late, and a reminder that contradicts the
+ * clock is worse than a vague one.
+ */
+export function prematchBlocks(fika: FikaLine): CardBlock[] {
   return [
-    heading("🎲 No game yet today — who's up?"),
-    text("The box is free. Lowest score wins the day."),
+    heading("🎲 Snart match!"),
+    text("Vi kör 12:45 vid lådan, om några minuter. Lägst poäng vinner dagen."),
     ...fikaLine(fika),
   ];
 }
@@ -140,11 +168,11 @@ export function fikaBlocks(duty: {
   games?: number | null;
 }): CardBlock[] {
   return [
-    heading(`☕ ${duty.emoji} ${duty.name} buys fika this week`),
+    heading(`☕ ${duty.emoji} ${duty.name} bjuder på fika denna vecka`),
     text(
       duty.reason === "worst_last_week"
-        ? `Worst last week — average finish ${Number(duty.badness ?? 0).toFixed(2)} over ${duty.games ?? 0} game${duty.games === 1 ? "" : "s"}.`
-        : "Nobody eligible played last week, so this one was drawn at random.",
+        ? `Sämst förra veckan — snittplacering ${decimal(Number(duty.badness ?? 0))} över ${games(duty.games ?? 0)}.`
+        : "Ingen behörig spelade förra veckan, så lotten fick avgöra.",
     ),
   ];
 }

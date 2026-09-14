@@ -157,9 +157,9 @@ read -r -d '' PAYLOAD <<'JSON' || true
         "version": "1.4",
         "body": [
           { "type": "TextBlock", "size": "Large", "weight": "Bolder",
-            "text": "🎲 Shut the Box is wired up", "wrap": true },
+            "text": "🎲 Shut the Box är igång", "wrap": true },
           { "type": "TextBlock",
-            "text": "This is a test card. Winner announcements will look like this — name, score, streak, and 📦 when the box goes down.",
+            "text": "Det här är ett testkort. Vinnarkorten ser ut så här — namn, poäng, svit, och 📦 när lådan stängs.",
             "wrap": true }
         ]
       }
