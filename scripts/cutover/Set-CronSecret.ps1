@@ -23,6 +23,7 @@ paste the firewalled database needs.
 #Requires -Version 7
 [CmdletBinding()]
 param(
+    [string] $AppUrl = 'https://sl-shut-the-box-opal.vercel.app',
     [switch] $WhatIfOnly
 )
 
@@ -45,12 +46,23 @@ $secret = -join (1..48 | ForEach-Object { $alphabet | Get-Random })
 
 Write-Host ("Generated a {0}-character secret." -f $secret.Length)
 
+# BOTH statements, deliberately. The first time round the clipboard carried
+# only the secret, and cron_settings was left empty — which makes
+# run_scheduled_job warn and do nothing, silently, forever. The scheduler
+# needs to know where to call as much as it needs the token.
 $sql = @"
--- Shut the Box: the bearer token pg_cron uses to call the app's endpoints.
--- Run this in the Supabase SQL editor (Dashboard -> SQL Editor -> New query).
+-- Shut the Box: what the scheduled jobs need. Paste BOTH statements into the
+-- Supabase SQL editor (Dashboard -> SQL Editor -> New query -> Run).
+
+-- 1. Where to call. Not a secret, but it cannot live in the migration: local
+--    development would then schedule jobs against production.
+insert into cron_settings (app_url) values ('$AppUrl')
+on conflict (id) do update set app_url = excluded.app_url, updated_at = now();
+
+-- 2. The bearer token pg_cron presents to those endpoints.
 select vault.create_secret('$secret', 'cron_secret', 'CRON_SECRET for the scheduled jobs');
 
--- If a secret by that name already exists, update it instead:
+-- If a secret by that name already exists, run this instead of the line above:
 -- select vault.update_secret(id, '$secret') from vault.secrets where name = 'cron_secret';
 "@
 
@@ -95,6 +107,7 @@ Write-Ok 'The matching Vault statement is now on your clipboard.'
 Write-Host ''
 Write-Host 'Next:'
 Write-Host '  1. Supabase -> SQL Editor -> New query -> paste (Ctrl+V) -> Run'
+Write-Host '     (two statements: where to call, and the token to call with)'
 Write-Host '  2. Redeploy, so the app picks up the new secret:'
 Write-Host ("     vercel --cwd {0} --prod" -f $repoRoot)
 Write-Host ''
