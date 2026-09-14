@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { Button, buttonClass } from "@/components/ui/button";
 
+// Next 16 passes `retry`, not `reset`; under the old name the button did nothing.
 export default function GameError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   return (
     <main className="mx-auto flex max-w-md flex-col items-center gap-4 p-10 text-center">
@@ -23,7 +24,7 @@ export default function GameError({
         lives in the database, not in this page.
       </p>
       <div className="flex gap-2">
-        <Button onClick={reset}>Try again</Button>
+        <Button onClick={retry}>Try again</Button>
         <Link href="/" className={buttonClass("secondary")}>
           Back to Today
         </Link>

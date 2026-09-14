@@ -11,6 +11,7 @@ import {
   verifyWhoCookie,
 } from "./session";
 import type { Player } from "./types";
+import type { ActionResult } from "@/lib/action-result";
 
 /**
  * Request-scoped authentication.
@@ -123,4 +124,37 @@ export function requireCron(request: Request): void {
   if (!timingSafeEqual(Buffer.from(provided), Buffer.from(wanted))) {
     throw new SessionError("Bad cron secret");
   }
+}
+
+/**
+ * Runs a server action as the named player, or answers with the sentence to
+ * show when there is none.
+ *
+ * [concept: server functions are their own entry point] A Server Function is a
+ * POST to the route it is used on and is reachable without going through any
+ * UI, so the Proxy gate in front of the app is not enough by itself: every
+ * mutation re-checks here. This used to be pasted into six action files.
+ */
+export async function withSession<T = object>(
+  run: (actorId: string) => Promise<ActionResult<T>>,
+): Promise<ActionResult<T>> {
+  try {
+    const { player } = await requireSession();
+    return await run(player.id);
+  } catch (e) {
+    if (e instanceof SessionError) return { ok: false, error: e.message };
+    throw e;
+  }
+}
+
+/**
+ * For reads, which need the PIN but not a name. Watching a game does not
+ * require saying who you are; gating the read on an identity made the polling
+ * fallback fail silently on exactly those devices.
+ */
+export async function withPin<T = object>(
+  run: () => Promise<ActionResult<T>>,
+): Promise<ActionResult<T>> {
+  if (!(await hasPin())) return { ok: false, error: "Enter the team PIN first." };
+  return run();
 }

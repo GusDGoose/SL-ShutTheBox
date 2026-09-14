@@ -1,15 +1,31 @@
 import { headers } from "next/headers";
 
 /**
- * The app's own absolute URL, for the things that cannot be relative.
+ * The app's own absolute URL, for the things that cannot be relative: the QR
+ * code on the team-play lobby and the buttons on the Teams cards.
  *
- * A QR code is the case that forces this: it is rendered on the SERVER, into an
- * SVG, and a camera pointed at it has no idea what host the page came from.
+ * APP_URL is the answer in production, but it is only trusted for its ORIGIN.
+ * The value in Vercel was pasted from a browser's address bar while the PIN
+ * page was open, so for a month it read `https://…/pin?next=%2F` — and every
+ * link built by appending a path to it led to the PIN gate first. Nobody
+ * noticed on the Teams cards, because the gate then sends you on to Today.
+ * The QR code for a team day noticed: a guest with no PIN has nowhere to go.
  *
- * APP_URL is the answer in production, but it is optional (see .env.example)
- * and unset in local development, so the request's own forwarded headers are
- * the fallback. Vercel sets both; `next start` sets host alone.
+ * When APP_URL is unset or unparseable, the request's own forwarded headers are
+ * the fallback — local development, and preview deployments, where the URL
+ * differs per deploy and a QR must point at THIS host.
  */
+
+/** Scheme and host only, or null when there is nothing usable. */
+export function appOrigin(appUrl: string | undefined): string | null {
+  const raw = (appUrl ?? "").trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return null;
+  }
+}
 
 /** The pure half, so the fallback can be tested without a request. */
 export function baseUrlFrom(
@@ -17,12 +33,12 @@ export function baseUrlFrom(
   proto: string | null,
   host: string | null,
 ): string {
-  const configured = (appUrl ?? "").trim().replace(/\/+$/, "");
+  const configured = appOrigin(appUrl);
   if (configured) return configured;
   if (!host) return "";
   // A forwarded host already carries its port; localhost is the only place the
   // protocol is not https, and that is exactly what the header reports.
-  return `${proto ?? "https"}://${host}`.replace(/\/+$/, "");
+  return `${proto ?? "https"}://${host}`;
 }
 
 /**

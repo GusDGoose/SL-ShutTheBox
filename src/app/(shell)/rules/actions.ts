@@ -5,7 +5,7 @@ import { requireSession, SessionError } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-errors";
 import { supabaseAdmin } from "@/lib/supabase";
 import { rpc } from "@/lib/db-rows";
-import type { ActionResult } from "@/app/(focus)/game/actions";
+import type { ActionResult } from "@/lib/action-result";
 
 /**
  * Choosing what the next season plays.

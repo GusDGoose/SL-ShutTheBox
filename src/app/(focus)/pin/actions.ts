@@ -2,6 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { safeNext } from "@/lib/next-param";
 import { supabaseAdmin } from "@/lib/supabase";
 import {
   PIN_COOKIE,
@@ -21,11 +22,7 @@ type GateResult = { allowed: boolean; retry_after_seconds: number };
  */
 export async function verifyPin(formData: FormData) {
   const attempt = String(formData.get("pin") ?? "");
-  const rawNext = String(formData.get("next") ?? "/");
-  // [concept: open redirect] Only same-site relative paths, otherwise a crafted
-  // link could bounce colleagues to an attacker's site after they sign in.
-  const next =
-    rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+  const next = safeNext(String(formData.get("next") ?? "/"));
   // The annotation is on the variable, not the return position: that is what
   // the compiler needs in order to treat these calls as terminating. Without
   // it, every check below would still have to allow for the values it just

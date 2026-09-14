@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { hasPin, requireSession, SessionError } from "@/lib/auth";
+import { withPin, withSession } from "@/lib/auth";
+import type { ActionResult } from "@/lib/action-result";
 import { describeDbError } from "@/lib/db-errors";
 import { parseSnapshot, type LiveSnapshot } from "@/lib/live";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -16,45 +17,9 @@ import { announceWinners } from "@/lib/teams";
  * RPC, so the game exists in the database from the moment it starts: a refresh
  * resumes it, and (from WP-B7) another phone can watch it.
  *
- * [concept: server functions are their own entry point] Every action starts
- * with requireSession() — a Server Function is a POST to the route it is used
- * on and is reachable without going through any UI, so the Proxy gate in front
- * of the app is not enough by itself.
+ * Every action runs inside withSession() or withPin() from src/lib/auth.ts,
+ * which is where the reasoning about why lives.
  */
-
-export type ActionError = { ok: false; error: string };
-/** `object` by default, so an action with nothing to return is just `{ ok: true }`. */
-export type ActionResult<T = object> = ({ ok: true } & T) | ActionError;
-
-async function withSession<T = object>(
-  run: (actorId: string) => Promise<ActionResult<T>>,
-): Promise<ActionResult<T>> {
-  try {
-    const { player } = await requireSession();
-    return await run(player.id);
-  } catch (e) {
-    if (e instanceof SessionError) return { ok: false, error: e.message };
-    throw e;
-  }
-}
-
-/**
- * For reads, which need the PIN but not a name.
- *
- * Watching a game deliberately does not require saying who you are — the game
- * page renders for anyone past the PIN gate. Gating the read on an identity as
- * well made the polling fallback fail silently on exactly those devices: the
- * poll fired every few seconds, the action refused every time, and the board
- * sat frozen while the indicator claimed it was catching up.
- */
-async function withPin<T = object>(
-  run: () => Promise<ActionResult<T>>,
-): Promise<ActionResult<T>> {
-  if (!(await hasPin())) {
-    return { ok: false, error: "Enter the team PIN first." };
-  }
-  return run();
-}
 
 type SnapshotResult = ActionResult<{ snapshot: LiveSnapshot }>;
 

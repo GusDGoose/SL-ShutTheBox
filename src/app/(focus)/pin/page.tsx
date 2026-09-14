@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { verifyPin } from "./actions";
 import { buttonClass } from "@/components/ui/button";
+import { isPublicPath, safeNext } from "@/lib/next-param";
 import { hasSessionSecret } from "@/lib/session";
 
 function lockoutLabel(seconds: number): string {
@@ -15,6 +17,13 @@ export default async function PinPage({
   searchParams: Promise<{ error?: string; next?: string; locked?: string }>;
 }) {
   const { error, next, locked } = await searchParams;
+
+  // Somebody on their way to a route that needs no PIN — team play, via a
+  // stale link or a QR code printed before a fix — is let straight through.
+  // Asking a guest for a passcode the destination does not want is the one
+  // thing guaranteed to end a team day on this screen.
+  const destination = safeNext(next);
+  if (isPublicPath(destination)) redirect(destination);
 
   // Both are required, and the app fails closed without either, so the page
   // says exactly which one is missing rather than just refusing every PIN.
@@ -45,7 +54,7 @@ export default async function PinPage({
       )}
 
       <form action={verifyPin} className="flex flex-col items-center gap-3">
-        <input type="hidden" name="next" value={next ?? "/"} />
+        <input type="hidden" name="next" value={destination} />
         {/* A placeholder is not a label: it disappears the moment you type,
             and a screen reader announcing "PIN" only until the first digit
             is worse than useless on the one field that gates the whole app. */}

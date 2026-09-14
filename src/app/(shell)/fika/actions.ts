@@ -1,29 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireSession, SessionError } from "@/lib/auth";
+import { withSession } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-errors";
 import { supabaseAdmin } from "@/lib/supabase";
-import type { ActionResult } from "@/app/(focus)/game/actions";
+import type { ActionResult } from "@/lib/action-result";
 
-/**
- * Turning down the fika duty, and drawing one for a week that has none.
- *
- * Both need a named player rather than just the PIN — a skip is recorded
- * against whoever pressed it, and "somebody skipped, nobody knows who" is
- * exactly the argument this rota exists to prevent.
- */
-async function withSession<T = object>(
-  run: (actorId: string) => Promise<ActionResult<T>>,
-): Promise<ActionResult<T>> {
-  try {
-    const { player } = await requireSession();
-    return await run(player.id);
-  } catch (e) {
-    if (e instanceof SessionError) return { ok: false, error: e.message };
-    throw e;
-  }
-}
 
 /** Not this week — mark it skipped and draw a replacement for the same week. */
 export async function skipFika(dutyId: string): Promise<ActionResult> {

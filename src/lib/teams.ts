@@ -1,4 +1,5 @@
 import "server-only";
+import { appOrigin } from "@/lib/app-url";
 import { supabaseAdmin } from "./supabase";
 import {
   digestBlocks,
@@ -40,7 +41,7 @@ export async function postCard(
   const url = process.env.TEAMS_WEBHOOK_URL;
   if (!url || blocks.length === 0) return false;
 
-  const appUrl = process.env.APP_URL;
+  const appUrl = appOrigin(process.env.APP_URL);
   const openApp: Action[] = appUrl
     ? [{ title: "Öppna tavlan", url: appUrl }]
     : [];
@@ -163,7 +164,7 @@ export async function postDigest(digest: Digest): Promise<boolean> {
 
 /** 12:40 on a weekday — just before the box comes out. */
 export async function postPrematch(): Promise<boolean> {
-  const appUrl = process.env.APP_URL;
+  const appUrl = appOrigin(process.env.APP_URL);
   return postCard(
     prematchBlocks(await currentFika()),
     appUrl ? [{ title: "Starta matchen 🎲", url: `${appUrl}/play` }] : [],
@@ -178,7 +179,7 @@ export async function postFikaCard(duty: {
   badness?: number | null;
   games?: number | null;
 }): Promise<boolean> {
-  const appUrl = process.env.APP_URL;
+  const appUrl = appOrigin(process.env.APP_URL);
   return postCard(
     fikaBlocks(duty),
     appUrl ? [{ title: "Fikaschemat ☕", url: `${appUrl}/fika` }] : [],

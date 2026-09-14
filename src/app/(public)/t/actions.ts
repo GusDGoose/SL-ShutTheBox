@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireSession, SessionError } from "@/lib/auth";
+import { withSession } from "@/lib/auth";
 import { describeDbErrorVerbatim } from "@/lib/db-errors";
 import { rpc, type RpcArgs, type RpcName } from "@/lib/db-rows";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -13,7 +13,7 @@ import {
   type TournamentSnapshot,
 } from "@/lib/tournament";
 import { extractVideoId } from "@/lib/youtube";
-import type { ActionResult } from "@/app/(focus)/game/actions";
+import type { ActionResult } from "@/lib/action-result";
 
 /**
  * Every write team play makes.
@@ -30,17 +30,6 @@ import type { ActionResult } from "@/app/(focus)/game/actions";
 
 const BAD_CODE = "That code does not look right. Check the link and try again.";
 
-async function withSession<T = object>(
-  run: (actorId: string) => Promise<ActionResult<T>>,
-): Promise<ActionResult<T>> {
-  try {
-    const { player } = await requireSession();
-    return await run(player.id);
-  } catch (e) {
-    if (e instanceof SessionError) return { ok: false, error: e.message };
-    throw e;
-  }
-}
 
 /**
  * Normalises the code before it reaches the database, so a link typed in lower
