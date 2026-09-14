@@ -129,6 +129,27 @@ export type Database = {
         }
         Relationships: []
       }
+      cron_settings: {
+        Row: {
+          app_url: string
+          id: boolean
+          secret_name: string
+          updated_at: string
+        }
+        Insert: {
+          app_url: string
+          id?: boolean
+          secret_name?: string
+          updated_at?: string
+        }
+        Update: {
+          app_url?: string
+          id?: boolean
+          secret_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       fika_cycles: {
         Row: {
           id: string
@@ -997,6 +1018,200 @@ export type Database = {
           },
         ]
       }
+      tournament_live: {
+        Row: {
+          member_id: string
+          team_id: string
+          tiles_down: number[]
+          updated_at: string
+        }
+        Insert: {
+          member_id: string
+          team_id: string
+          tiles_down?: number[]
+          updated_at?: string
+        }
+        Update: {
+          member_id?: string
+          team_id?: string
+          tiles_down?: number[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tournament_live_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "tournament_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tournament_live_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: true
+            referencedRelation: "tournament_teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tournament_members: {
+        Row: {
+          id: string
+          name: string
+          played_at: string | null
+          score: number | null
+          team_id: string
+          tiles_open: number[] | null
+          turn_order: number
+        }
+        Insert: {
+          id?: string
+          name: string
+          played_at?: string | null
+          score?: number | null
+          team_id: string
+          tiles_open?: number[] | null
+          turn_order: number
+        }
+        Update: {
+          id?: string
+          name?: string
+          played_at?: string | null
+          score?: number | null
+          team_id?: string
+          tiles_open?: number[] | null
+          turn_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tournament_members_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "tournament_teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tournament_teams: {
+        Row: {
+          created_at: string
+          emoji: string
+          id: string
+          name: string
+          seq: number
+          song_url: string | null
+          tournament_id: string
+        }
+        Insert: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          name: string
+          seq?: never
+          song_url?: string | null
+          tournament_id: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          name?: string
+          seq?: never
+          song_url?: string | null
+          tournament_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tournament_teams_tournament_id_fkey"
+            columns: ["tournament_id"]
+            isOneToOne: false
+            referencedRelation: "tournaments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tournaments: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string
+          finished_at: string | null
+          id: string
+          name: string
+          ruleset_id: string
+          status: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by: string
+          finished_at?: string | null
+          id?: string
+          name: string
+          ruleset_id: string
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string
+          finished_at?: string | null
+          id?: string
+          name?: string
+          ruleset_id?: string
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tournaments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "fika_tally"
+            referencedColumns: ["player_id"]
+          },
+          {
+            foreignKeyName: "tournaments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "player_ratings"
+            referencedColumns: ["player_id"]
+          },
+          {
+            foreignKeyName: "tournaments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "player_stats"
+            referencedColumns: ["player_id"]
+          },
+          {
+            foreignKeyName: "tournaments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "player_streaks"
+            referencedColumns: ["player_id"]
+          },
+          {
+            foreignKeyName: "tournaments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tournaments_ruleset_id_fkey"
+            columns: ["ruleset_id"]
+            isOneToOne: false
+            referencedRelation: "rulesets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       biggest_chokes: {
@@ -1614,13 +1829,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "game_players_player_id_fkey"
-            columns: ["nemesis_id"]
-            isOneToOne: false
-            referencedRelation: "fika_tally"
-            referencedColumns: ["player_id"]
-          },
-          {
-            foreignKeyName: "game_players_player_id_fkey"
             columns: ["player_id"]
             isOneToOne: false
             referencedRelation: "fika_tally"
@@ -1630,7 +1838,7 @@ export type Database = {
             foreignKeyName: "game_players_player_id_fkey"
             columns: ["nemesis_id"]
             isOneToOne: false
-            referencedRelation: "player_ratings"
+            referencedRelation: "fika_tally"
             referencedColumns: ["player_id"]
           },
           {
@@ -1644,7 +1852,7 @@ export type Database = {
             foreignKeyName: "game_players_player_id_fkey"
             columns: ["nemesis_id"]
             isOneToOne: false
-            referencedRelation: "player_stats"
+            referencedRelation: "player_ratings"
             referencedColumns: ["player_id"]
           },
           {
@@ -1658,7 +1866,7 @@ export type Database = {
             foreignKeyName: "game_players_player_id_fkey"
             columns: ["nemesis_id"]
             isOneToOne: false
-            referencedRelation: "player_streaks"
+            referencedRelation: "player_stats"
             referencedColumns: ["player_id"]
           },
           {
@@ -1671,13 +1879,20 @@ export type Database = {
           {
             foreignKeyName: "game_players_player_id_fkey"
             columns: ["nemesis_id"]
+            isOneToOne: false
+            referencedRelation: "player_streaks"
+            referencedColumns: ["player_id"]
+          },
+          {
+            foreignKeyName: "game_players_player_id_fkey"
+            columns: ["player_id"]
             isOneToOne: false
             referencedRelation: "players"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "game_players_player_id_fkey"
-            columns: ["player_id"]
+            columns: ["nemesis_id"]
             isOneToOne: false
             referencedRelation: "players"
             referencedColumns: ["id"]
@@ -2038,14 +2253,44 @@ export type Database = {
         Args: { p_actor: string; p_game_id: string }
         Returns: Json
       }
+      assert_tournament: {
+        Args: { p_code: string }
+        Returns: {
+          code: string
+          created_at: string
+          created_by: string
+          finished_at: string | null
+          id: string
+          name: string
+          ruleset_id: string
+          status: string
+          updated_at: string
+          version: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "tournaments"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       broadcast_live_game: { Args: { p_game_id: string }; Returns: undefined }
+      broadcast_tournament: { Args: { p_id: string }; Returns: undefined }
       claim_scorekeeper: {
         Args: { p_actor: string; p_game_id: string }
+        Returns: Json
+      }
+      create_tournament: {
+        Args: { p_actor: string; p_name: string }
         Returns: Json
       }
       default_ruleset_id: { Args: never; Returns: string }
       delete_game: {
         Args: { p_actor: string; p_game_id: string; p_reason?: string }
+        Returns: undefined
+      }
+      delete_tournament: {
+        Args: { p_actor: string; p_code: string }
         Returns: undefined
       }
       draw_fika: {
@@ -2092,6 +2337,10 @@ export type Database = {
       evaluate_achievements: { Args: never; Returns: undefined }
       finish_game: {
         Args: { p_actor: string; p_game_id: string }
+        Returns: Json
+      }
+      finish_tournament: {
+        Args: { p_actor: string; p_code: string }
         Returns: Json
       }
       game_snapshot: { Args: { p_game_id: string }; Returns: Json }
@@ -2147,6 +2396,10 @@ export type Database = {
       ruleset_tiles: { Args: { p_rules: Json }; Returns: number }
       ruleset_validation_error: { Args: { p_rules: Json }; Returns: string }
       ruleset_win_sign: { Args: { p_rules: Json }; Returns: number }
+      run_scheduled_job: {
+        Args: { p_hour: number; p_path: string }
+        Returns: undefined
+      }
       set_game_photo: {
         Args: { p_actor: string; p_game_id: string; p_path: string }
         Returns: undefined
@@ -2188,6 +2441,81 @@ export type Database = {
         Returns: Json
       }
       stockholm_today: { Args: never; Returns: string }
+      tournament_add_member: {
+        Args: { p_code: string; p_name: string; p_team_id: string }
+        Returns: Json
+      }
+      tournament_correct_member: {
+        Args: {
+          p_code: string
+          p_member_id: string
+          p_score: number
+          p_team_id: string
+        }
+        Returns: Json
+      }
+      tournament_create_team: {
+        Args: {
+          p_code: string
+          p_emoji?: string
+          p_name: string
+          p_song_url?: string
+        }
+        Returns: Json
+      }
+      tournament_delete_team: {
+        Args: { p_code: string; p_team_id: string }
+        Returns: Json
+      }
+      tournament_end_turn: {
+        Args: { p_code: string; p_team_id: string; p_typed_score?: number }
+        Returns: Json
+      }
+      tournament_generate_code: { Args: never; Returns: string }
+      tournament_normalize_code: { Args: { p_code: string }; Returns: string }
+      tournament_remove_member: {
+        Args: { p_code: string; p_member_id: string; p_team_id: string }
+        Returns: Json
+      }
+      tournament_set_board: {
+        Args: { p_code: string; p_team_id: string; p_tiles_down: number[] }
+        Returns: Json
+      }
+      tournament_snapshot: { Args: { p_id: string }; Returns: Json }
+      tournament_snapshot_by_code: { Args: { p_code: string }; Returns: Json }
+      tournament_start_team: {
+        Args: { p_code: string; p_team_id: string }
+        Returns: Json
+      }
+      tournament_team_in: {
+        Args: { p_team: string; p_tournament: string }
+        Returns: {
+          created_at: string
+          emoji: string
+          id: string
+          name: string
+          seq: number
+          song_url: string | null
+          tournament_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "tournament_teams"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      tournament_touch: { Args: { p_id: string }; Returns: undefined }
+      tournament_update_team: {
+        Args: {
+          p_code: string
+          p_emoji?: string
+          p_name: string
+          p_song_url?: string
+          p_team_id: string
+        }
+        Returns: Json
+      }
       undo_game_change: {
         Args: { p_actor: string; p_audit_id: number }
         Returns: undefined
