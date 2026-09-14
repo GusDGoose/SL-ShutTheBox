@@ -23,145 +23,875 @@ create table if not exists supabase_migrations.schema_migrations (
   name       text
 );
 
--- Applying: 0020
+-- Applying: 0021
 
 
--- ======================= 0020_schedule.sql =======================
+-- ======================= 0021_tournament.sql =======================
 
--- Shut the Box — scheduling moves from Vercel cron into the database.
+-- Shut the Box — team play (an "event mode" beside the daily game).
 --
--- Vercel's Hobby plan can run two cron jobs, once per day each, and fires
--- them somewhere inside the scheduled hour. That was fine for a digest. It
--- cannot express either of the two things asked for on 2026-09-14:
+-- The office team day needs four teams playing in parallel, everyone inside a
+-- team, the winning team's song at the end — with temporary teams and temporary
+-- members who are NOT on the roster. Nothing here may touch the daily game:
+-- ratings, badges, fika, seasons and the stats views all read `games`, so team
+-- play gets its own four tables and never writes a `games` or `players` row.
 --
---   * "12:40 på vardagar" — a reminder five minutes before the match is only
---     worth sending if it is on time to the minute;
---   * "10:00" and "12:40" in STOCKHOLM time, year round. A single UTC hour is
---     the right local time for only half the year, and the plan's one-run-a-
---     day limit means you cannot simply schedule both hours and let the job
---     work out which one counts.
+-- Two invariants hold the design up:
 --
--- pg_cron has minute precision and no job limit. It still runs on UTC, so the
--- daylight-saving problem is solved the only way it can be: each job is
--- scheduled at BOTH candidate UTC hours, and the function refuses to do
--- anything unless the Stockholm wall clock actually reads the intended time.
--- In summer the earlier firing does the work and the later one declines; in
--- winter it is the other way round. Nothing to remember twice a year.
+--   [concept: derived status] A team is `playing` when it has a live row,
+--   `done` when every member has a score, `forming` otherwise. Nothing stores
+--   it, so adding a member to a finished team simply re-opens it — no state
+--   machine to get wrong. Ranking is separate: a team is ranked as soon as ONE
+--   member has played, which is what makes "finish while a team is mid-way"
+--   well defined.
 --
--- The app endpoints remain the only place that knows what a card says. This
--- migration is plumbing: it decides WHEN, never WHAT.
-
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
+--   [concept: bump last, broadcast once] Every writing function ends with
+--   tournament_touch(), and only that bumps `version`. The trigger fires on
+--   `update of version`, so exactly one broadcast goes out per action and it
+--   carries the state AFTER the change. The counter lives on `tournaments`,
+--   which is never deleted mid-event, so it never resets — the problem
+--   use-live-game.ts has to work around for the daily board.
+--
+-- Access: the six-character join code IS the participant credential (the /t/*
+-- routes are exempt from the PIN gate in src/proxy.ts). Anyone holding it can
+-- drive any team. Creating, finishing and deleting an event need a real
+-- session, so they take p_actor and are audited.
+--
+-- Error codes (copy in src/lib/db-errors.ts):
+--   STB02 does not add up      STB05 nobody has played yet
+--   STB10 no such code         STB11 this team play has finished
+--   STB12 that team is not at that stage
+--
+-- Rollback:
+--   drop table tournament_live, tournament_members, tournament_teams, tournaments cascade;
+--   drop function if exists tournament_snapshot(uuid), tournament_snapshot_by_code(text),
+--     tournament_normalize_code(text), tournament_generate_code(), tournament_touch(uuid),
+--     broadcast_tournament(uuid), tournaments_broadcast(), assert_tournament(text),
+--     tournament_team_in(uuid, uuid), create_tournament(uuid, text),
+--     tournament_create_team(text, text, text, text),
+--     tournament_update_team(text, uuid, text, text, text),
+--     tournament_delete_team(text, uuid), tournament_add_member(text, uuid, text),
+--     tournament_remove_member(text, uuid, uuid), tournament_start_team(text, uuid),
+--     tournament_set_board(text, uuid, smallint[]), tournament_end_turn(text, uuid, integer),
+--     tournament_correct_member(text, uuid, uuid, integer), finish_tournament(uuid, text),
+--     delete_tournament(uuid, text) cascade;
+--   alter policy "anon may listen to live game topics" on realtime.messages
+--     using (realtime.messages.extension = 'broadcast' and realtime.topic() like 'game:%');
 
 -- ---------------------------------------------------------------------------
--- Where to call, and with what
+-- Tables
 -- ---------------------------------------------------------------------------
--- The base URL is not a secret and lives here. The cron secret IS one, so it
--- goes in Supabase Vault, which encrypts it at rest — never in a migration,
--- because migrations are in git.
-create table cron_settings (
-  id         boolean primary key default true check (id),
-  app_url    text not null,
-  -- Name of the Vault secret holding CRON_SECRET.
-  secret_name text not null default 'cron_secret',
+
+create table tournaments (
+  id          uuid primary key default gen_random_uuid(),
+  -- Unambiguous alphabet: no 0/O/1/I, because this gets read off a projector
+  -- and typed on a phone.
+  code        text not null unique
+              check (code ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$'),
+  name        text not null check (length(btrim(name)) between 1 and 60),
+  ruleset_id  uuid not null references rulesets(id),
+  created_by  uuid not null references players(id),
+  status      text not null default 'open' check (status in ('open', 'finished')),
+  -- The ONLY broadcast counter. See "bump last" above.
+  version     bigint not null default 0,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  finished_at timestamptz,
+  constraint tournaments_finished_has_time
+    check (status <> 'finished' or finished_at is not null)
+);
+
+create table tournament_teams (
+  id            uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  -- Display order is creation order, so the projector's list never reshuffles
+  -- under people while they play. The result page is the one that ranks.
+  seq           bigint generated always as identity,
+  name          text not null check (length(btrim(name)) between 1 and 40),
+  emoji         text not null default '🎲' check (length(emoji) between 1 and 8),
+  -- Shape only; that it is a YOUTUBE link is checked in the server action,
+  -- which already owns extractVideoId.
+  song_url      text check (song_url is null or song_url ~ '^https?://'),
+  created_at    timestamptz not null default now()
+);
+create index tournament_teams_tournament_idx on tournament_teams (tournament_id, seq);
+
+create table tournament_members (
+  id         uuid primary key default gen_random_uuid(),
+  team_id    uuid not null references tournament_teams(id) on delete cascade,
+  name       text not null check (length(btrim(name)) between 1 and 40),
+  turn_order integer not null,
+  score      integer check (score is null or score >= 0),
+  -- Null when the score was typed in, exactly as game_players does it.
+  tiles_open smallint[],
+  played_at  timestamptz,
+  unique (team_id, turn_order),
+  constraint tournament_members_played_has_score
+    check ((score is null) = (played_at is null)),
+  constraint tournament_members_tiles_only_when_played
+    check (tiles_open is null or score is not null)
+);
+create index tournament_members_team_idx on tournament_members (team_id, turn_order);
+
+-- [concept: heartbeat row] One per PLAYING team — the daily game has one per
+-- game, this has one per team, because four teams play at once.
+create table tournament_live (
+  team_id    uuid primary key references tournament_teams(id) on delete cascade,
+  -- Deliberately no cascade: a member row vanishing under a live board is a
+  -- bug, and should say so rather than silently work. The two delete paths
+  -- (delete_tournament, tournament_delete_team) clear live rows themselves.
+  member_id  uuid not null references tournament_members(id),
+  tiles_down smallint[] not null default '{}',
   updated_at timestamptz not null default now()
 );
 
-alter table cron_settings enable row level security;
-grant select, insert, update on cron_settings to service_role;
+create trigger tournaments_touch before update on tournaments
+  for each row execute function touch_updated_at();
+create trigger tournament_live_touch before update on tournament_live
+  for each row execute function touch_updated_at();
 
-comment on table cron_settings is
-  'One row. The base URL the scheduled jobs call; the bearer token lives in Vault.';
+-- [concept: RLS is the only lock] Supabase grants anon DML on every new public
+-- table by default, so enabling RLS with no policies is what denies access.
+alter table tournaments        enable row level security;
+alter table tournament_teams   enable row level security;
+alter table tournament_members enable row level security;
+alter table tournament_live    enable row level security;
 
-/**
- * Call one of the app's cron endpoints, but only if the Stockholm clock says
- * it is the right hour.
- *
- * p_hour is the intended LOCAL hour. Each job is scheduled at both UTC hours
- * that can map to it, and this is what makes exactly one of them act.
- */
-create or replace function run_scheduled_job(p_path text, p_hour integer)
-returns void language plpgsql volatile
-set search_path = public, extensions, vault, pg_temp as $fn$
+grant select, insert, update, delete on tournaments        to service_role;
+grant select, insert, update, delete on tournament_teams   to service_role;
+grant select, insert, update, delete on tournament_members to service_role;
+grant select, insert, update, delete on tournament_live    to service_role;
+
+-- ---------------------------------------------------------------------------
+-- The code
+-- ---------------------------------------------------------------------------
+
+-- The SQL twin of normalizeCode() in src/lib/tournament-code.ts: somebody will
+-- type it in lower case, or with the spaces it is printed with.
+create or replace function tournament_normalize_code(p_code text)
+returns text language sql immutable as $fn$
+  select upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+$fn$;
+
+create or replace function tournament_generate_code()
+returns text language sql volatile as $fn$
+  select string_agg(
+           substr('ABCDEFGHJKLMNPQRSTUVWXYZ23456789',
+                  1 + floor(random() * 32)::int, 1), '')
+    from generate_series(1, 6);
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Reading the event
+-- ---------------------------------------------------------------------------
+
+-- One value describing everything the lobby, a team's board and the result page
+-- need, for the server render, the reconnect fetch and the broadcast — so four
+-- phones and a projector can never disagree about the state.
+create or replace function tournament_snapshot(p_id uuid)
+returns jsonb language plpgsql stable as $fn$
 declare
-  v_local   timestamptz := now();
-  v_hour    integer;
-  v_cfg     cron_settings;
-  v_secret  text;
+  v_t       tournaments;
+  v_rules   jsonb;
+  v_teams   jsonb;
+  v_leaders jsonb;
+  v_counts  jsonb;
 begin
-  v_hour := extract(hour from (v_local at time zone 'Europe/Stockholm'))::int;
-  if v_hour is distinct from p_hour then
-    -- The other scheduled firing is the one that counts today.
-    return;
-  end if;
-
-  select * into v_cfg from cron_settings where id;
+  select * into v_t from tournaments where id = p_id;
   if not found then
-    raise warning 'cron_settings is empty — nothing scheduled will run';
-    return;
+    return null;
   end if;
+  select rules into v_rules from rulesets where id = v_t.ruleset_id;
 
-  select decrypted_secret into v_secret
-    from vault.decrypted_secrets
-   where name = v_cfg.secret_name
-   limit 1;
+  with m as (
+    select tm.team_id,
+           jsonb_agg(jsonb_build_object(
+             'id',         tm.id,
+             'name',       tm.name,
+             'turn_order', tm.turn_order,
+             'score',      tm.score,
+             'tiles_open', tm.tiles_open,
+             'played_at',  tm.played_at
+           ) order by tm.turn_order) as members,
+           count(*)::int        as member_count,
+           count(tm.score)::int as played_count,
+           sum(tm.score)::int   as total,
+           round(avg(tm.score)::numeric, 1) as average
+      from tournament_members tm
+      join tournament_teams tt on tt.id = tm.team_id
+     where tt.tournament_id = p_id
+     group by tm.team_id
+  ),
+  l as (
+    select tl.team_id, tl.member_id, tl.tiles_down,
+           (select coalesce(array_agg(g::smallint order by g), '{}'::smallint[])
+              from generate_series(1, ruleset_tiles(v_rules)) g
+             where not (g = any (tl.tiles_down))) as tiles_open
+      from tournament_live tl
+      join tournament_teams tt on tt.id = tl.team_id
+     where tt.tournament_id = p_id
+  ),
+  t as (
+    select tt.id, tt.name, tt.emoji, tt.song_url, tt.seq,
+           coalesce(m.members, '[]'::jsonb) as members,
+           coalesce(m.member_count, 0)      as member_count,
+           coalesce(m.played_count, 0)      as played_count,
+           m.total, m.average,
+           l.member_id as live_member_id, l.tiles_down, l.tiles_open,
+           case
+             when l.team_id is not null then 'playing'
+             when coalesce(m.member_count, 0) > 0
+              and m.played_count = m.member_count then 'done'
+             else 'forming'
+           end as status
+      from tournament_teams tt
+      left join m on m.team_id = tt.id
+      left join l on l.team_id = tt.id
+     where tt.tournament_id = p_id
+  ),
+  r as (
+    -- Ranked on whoever has played, not on being finished: an event can be
+    -- crowned while a team is still mid-way, and that team still placed.
+    select t.*,
+           case when t.played_count > 0
+                then rank() over (partition by (t.played_count > 0)
+                                  order by t.average * ruleset_win_sign(v_rules))
+           end as rnk
+      from t
+  )
+  select jsonb_agg(jsonb_build_object(
+           'id',           r.id,
+           'name',         r.name,
+           'emoji',        r.emoji,
+           'song_url',     r.song_url,
+           'seq',          r.seq,
+           'status',       r.status,
+           'members',      r.members,
+           'member_count', r.member_count,
+           'played_count', r.played_count,
+           'sum',          r.total,
+           'average',      r.average,
+           'live',         case when r.live_member_id is null then null else
+                             jsonb_build_object(
+                               'member_id',     r.live_member_id,
+                               'tiles_down',    to_jsonb(r.tiles_down),
+                               'tiles_open',    to_jsonb(r.tiles_open),
+                               'score_if_stop', ruleset_score(v_rules, r.tiles_open),
+                               'is_shut',       cardinality(r.tiles_open) = 0)
+                           end,
+           'rank',         r.rnk
+         ) order by r.seq),
+         coalesce(jsonb_agg(r.id) filter (where r.rnk = 1), '[]'::jsonb),
+         jsonb_build_object(
+           'teams',   count(*),
+           'forming', count(*) filter (where r.status = 'forming'),
+           'playing', count(*) filter (where r.status = 'playing'),
+           'done',    count(*) filter (where r.status = 'done'),
+           'ranked',  count(*) filter (where r.rnk is not null))
+    into v_teams, v_leaders, v_counts
+    from r;
 
-  if v_secret is null then
-    raise warning 'no Vault secret named % — cannot authenticate to %',
-      v_cfg.secret_name, p_path;
-    return;
-  end if;
-
-  -- Fire and forget: pg_net queues the request and returns immediately, so a
-  -- slow endpoint can never hold a cron worker open. The endpoint is
-  -- idempotent per day, so a retry or a double fire is harmless.
-  perform net.http_get(
-    url     := v_cfg.app_url || p_path,
-    headers := jsonb_build_object('Authorization', 'Bearer ' || v_secret),
-    timeout_milliseconds := 20000
+  return jsonb_build_object(
+    'tournament', jsonb_build_object(
+      'id',          v_t.id,
+      'code',        v_t.code,
+      'name',        v_t.name,
+      'status',      v_t.status,
+      'version',     v_t.version,
+      'ruleset_id',  v_t.ruleset_id,
+      'rules',       v_rules,
+      'created_at',  v_t.created_at,
+      'updated_at',  v_t.updated_at,
+      'finished_at', v_t.finished_at
+    ),
+    'teams',           coalesce(v_teams, '[]'::jsonb),
+    'leader_team_ids', coalesce(v_leaders, '[]'::jsonb),
+    'counts',          coalesce(v_counts, jsonb_build_object(
+                         'teams', 0, 'forming', 0, 'playing', 0,
+                         'done', 0, 'ranked', 0))
   );
 end
 $fn$;
 
-revoke execute on function run_scheduled_job(text, integer) from public, anon, authenticated;
-grant execute on function run_scheduled_job(text, integer) to service_role;
+create or replace function tournament_snapshot_by_code(p_code text)
+returns jsonb language plpgsql stable as $fn$
+declare
+  v_id uuid;
+begin
+  select id into v_id from tournaments
+   where code = tournament_normalize_code(p_code);
+  if v_id is null then
+    return null;
+  end if;
+  return tournament_snapshot(v_id);
+end
+$fn$;
 
 -- ---------------------------------------------------------------------------
--- The schedule
+-- Broadcasting
 -- ---------------------------------------------------------------------------
--- Weekday 12:40 Stockholm = 10:40 UTC in summer, 11:40 UTC in winter.
--- Monday  10:00 Stockholm = 08:00 UTC in summer, 09:00 UTC in winter.
+
+create or replace function tournament_touch(p_id uuid)
+returns void language plpgsql volatile as $fn$
+begin
+  update tournaments set version = version + 1 where id = p_id;
+end
+$fn$;
+
+create or replace function broadcast_tournament(p_id uuid)
+returns void language plpgsql security definer
+set search_path = public, pg_temp as $fn$
+begin
+  perform realtime.send(
+    public.tournament_snapshot(p_id),
+    'state',
+    'tournament:' || p_id::text,
+    true   -- private channel: subscribing needs the policy below
+  );
+end
+$fn$;
+
+create or replace function tournaments_broadcast()
+returns trigger language plpgsql security definer
+set search_path = public, pg_temp as $fn$
+begin
+  perform public.broadcast_tournament(new.id);
+  return null;   -- after trigger; the return value is ignored
+end
+$fn$;
+
+-- `of version` is what makes this fire once per action: touch_updated_at moves
+-- updated_at on every write, but only tournament_touch() and finish_tournament
+-- move version.
+create trigger tournaments_broadcast after update of version on tournaments
+  for each row execute function tournaments_broadcast();
+
+-- [concept: one policy, two topics] supabase/tests/0011_realtime.sql asserts
+-- that realtime.messages carries exactly ONE policy — a second one would read
+-- as somebody having widened access by accident. Widen the existing one
+-- instead, so that guard keeps meaning what it says.
+alter policy "anon may listen to live game topics" on realtime.messages
+  using (
+    realtime.messages.extension = 'broadcast'
+    and (realtime.topic() like 'game:%' or realtime.topic() like 'tournament:%')
+  );
+
+-- ---------------------------------------------------------------------------
+-- Shared guards
+-- ---------------------------------------------------------------------------
+
+-- Locks the event and checks it is still open. Returns the row, so callers get
+-- the id and the ruleset without a second read.
+create or replace function assert_tournament(p_code text)
+returns tournaments language plpgsql volatile as $fn$
+declare
+  v_t tournaments;
+begin
+  -- for update: four teams tapping at once must not read the same version.
+  select * into v_t from tournaments
+   where code = tournament_normalize_code(p_code)
+   for update;
+  if not found then
+    raise exception 'no team play has that code' using errcode = 'STB10';
+  end if;
+  if v_t.status <> 'open' then
+    raise exception 'this team play has finished' using errcode = 'STB11';
+  end if;
+  return v_t;
+end
+$fn$;
+
+-- Always called after assert_tournament, so the lock order is event then team
+-- and two teams can never deadlock against each other.
+create or replace function tournament_team_in(p_tournament uuid, p_team uuid)
+returns tournament_teams language plpgsql volatile as $fn$
+declare
+  v_team tournament_teams;
+begin
+  select * into v_team from tournament_teams
+   where id = p_team and tournament_id = p_tournament
+   for update;
+  if not found then
+    raise exception 'that team is not in this team play' using errcode = 'STB12';
+  end if;
+  return v_team;
+end
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Creating an event
+-- ---------------------------------------------------------------------------
+
+create or replace function create_tournament(p_actor uuid, p_name text)
+returns jsonb language plpgsql volatile as $fn$
+declare
+  v_ruleset uuid;
+  v_rules   jsonb;
+  v_season  uuid;
+  v_id      uuid;
+  v_code    text;
+begin
+  if not exists (select 1 from players where id = p_actor and is_active) then
+    raise exception 'only a player can start a team play' using errcode = 'STB02';
+  end if;
+  if length(btrim(coalesce(p_name, ''))) = 0 then
+    raise exception 'the event needs a name' using errcode = 'STB02';
+  end if;
+
+  v_season := ensure_season(stockholm_today());
+  select s.ruleset_id into v_ruleset from seasons s where s.id = v_season;
+  v_ruleset := coalesce(v_ruleset, default_ruleset_id());
+  select rules into v_rules from rulesets where id = v_ruleset;
+
+  -- The team board has no "call your shot" input, so a prediction season would
+  -- silently score every team as if everyone had called zero.
+  if ruleset_prediction_enabled(v_rules) then
+    raise exception 'team play cannot run a call-your-shot ruleset'
+      using errcode = 'STB02';
+  end if;
+
+  -- Collisions are vanishingly unlikely (32^6) but a retry is two lines.
+  for i in 1..20 loop
+    v_code := tournament_generate_code();
+    begin
+      insert into tournaments (code, name, ruleset_id, created_by)
+      values (v_code, btrim(p_name), v_ruleset, p_actor)
+      returning id into v_id;
+      exit;
+    exception when unique_violation then
+      v_id := null;
+    end;
+  end loop;
+  if v_id is null then
+    raise exception 'could not allocate a join code' using errcode = 'STB02';
+  end if;
+
+  insert into audit_log (actor_player_id, action, entity, entity_id, after)
+  values (p_actor, 'tournament.create', 'tournament', v_id,
+          jsonb_build_object('code', v_code, 'name', btrim(p_name)));
+
+  -- No touch: nobody can be subscribed to an event that did not exist yet.
+  return tournament_snapshot(v_id);
+end
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Teams
+-- ---------------------------------------------------------------------------
+
+create or replace function tournament_create_team(
+  p_code     text,
+  p_name     text,
+  p_emoji    text default null,
+  p_song_url text default null
+) returns jsonb language plpgsql volatile as $fn$
+declare
+  v_t    tournaments := assert_tournament(p_code);
+  v_team uuid;
+begin
+  if length(btrim(coalesce(p_name, ''))) = 0 then
+    raise exception 'the team needs a name' using errcode = 'STB02';
+  end if;
+
+  insert into tournament_teams (tournament_id, name, emoji, song_url)
+  values (v_t.id, btrim(p_name),
+          coalesce(nullif(btrim(coalesce(p_emoji, '')), ''), '🎲'),
+          nullif(btrim(coalesce(p_song_url, '')), ''))
+  returning id into v_team;
+
+  perform tournament_touch(v_t.id);
+  -- The creating phone needs the id to go straight to its board.
+  return tournament_snapshot(v_t.id) || jsonb_build_object('created_team_id', v_team);
+end
+$fn$;
+
+create or replace function tournament_update_team(
+  p_code     text,
+  p_team_id  uuid,
+  p_name     text,
+  p_emoji    text default null,
+  p_song_url text default null
+) returns jsonb language plpgsql volatile as $fn$
+declare
+  v_t tournaments := assert_tournament(p_code);
+begin
+  perform tournament_team_in(v_t.id, p_team_id);   -- STB12
+  if length(btrim(coalesce(p_name, ''))) = 0 then
+    raise exception 'the team needs a name' using errcode = 'STB02';
+  end if;
+
+  update tournament_teams
+     set name     = btrim(p_name),
+         emoji    = coalesce(nullif(btrim(coalesce(p_emoji, '')), ''), '🎲'),
+         song_url = nullif(btrim(coalesce(p_song_url, '')), '')
+   where id = p_team_id;
+
+  perform tournament_touch(v_t.id);
+  return tournament_snapshot(v_t.id);
+end
+$fn$;
+
+create or replace function tournament_delete_team(p_code text, p_team_id uuid)
+returns jsonb language plpgsql volatile as $fn$
+declare
+  v_t tournaments := assert_tournament(p_code);
+begin
+  perform tournament_team_in(v_t.id, p_team_id);   -- STB12
+
+  if exists (select 1 from tournament_live where team_id = p_team_id) then
+    raise exception 'that team is playing — end the turn first'
+      using errcode = 'STB12';
+  end if;
+  if exists (select 1 from tournament_members
+              where team_id = p_team_id and score is not null) then
+    raise exception 'that team has played — its scores stay in the record'
+      using errcode = 'STB12';
+  end if;
+
+  delete from tournament_teams where id = p_team_id;
+
+  perform tournament_touch(v_t.id);
+  return tournament_snapshot(v_t.id);
+end
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Members
+-- ---------------------------------------------------------------------------
+
+-- Allowed whatever the team is doing: somebody turning up late joins the back
+-- of the queue, and adding to a finished team simply re-opens it, because
+-- `status` is derived rather than stored.
+create or replace function tournament_add_member(
+  p_code    text,
+  p_team_id uuid,
+  p_name    text
+) returns jsonb language plpgsql volatile as $fn$
+declare
+  v_t     tournaments := assert_tournament(p_code);
+  v_order integer;
+begin
+  perform tournament_team_in(v_t.id, p_team_id);   -- STB12
+  if length(btrim(coalesce(p_name, ''))) = 0 then
+    raise exception 'that player needs a name' using errcode = 'STB02';
+  end if;
+
+  select coalesce(max(turn_order), 0) + 1 into v_order
+    from tournament_members where team_id = p_team_id;
+
+  insert into tournament_members (team_id, name, turn_order)
+  values (p_team_id, btrim(p_name), v_order);
+
+  perform tournament_touch(v_t.id);
+  return tournament_snapshot(v_t.id);
+end
+$fn$;
+
+create or replace function tournament_remove_member(
+  p_code      text,
+  p_team_id   uuid,
+  p_member_id uuid
+) returns jsonb language plpgsql volatile as $fn$
+declare
+  v_t   tournaments := assert_tournament(p_code);
+  v_row tournament_members;
+begin
+  perform tournament_team_in(v_t.id, p_team_id);   -- STB12
+
+  select * into v_row from tournament_members
+   where id = p_member_id and team_id = p_team_id;
+  if not found then
+    raise exception 'that player is not in this team' using errcode = 'STB12';
+  end if;
+  if v_row.score is not null then
+    raise exception 'a player who has rolled stays in the record'
+      using errcode = 'STB12';
+  end if;
+  if exists (select 1 from tournament_live
+              where team_id = p_team_id and member_id = p_member_id) then
+    raise exception 'that player is at the board — end the turn first'
+      using errcode = 'STB12';
+  end if;
+
+  delete from tournament_members where id = p_member_id;
+
+  perform tournament_touch(v_t.id);
+  return tournament_snapshot(v_t.id);
+end
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Playing
+-- ---------------------------------------------------------------------------
+
+create or replace function tournament_start_team(p_code text, p_team_id uuid)
+returns jsonb language plpgsql volatile as $fn$
+declare
+  v_t    tournaments := assert_tournament(p_code);
+  v_next uuid;
+begin
+  perform tournament_team_in(v_t.id, p_team_id);   -- STB12
+
+  -- Idempotent: a double tap on "Start playing" must not restart anybody, and
+  -- must not broadcast either.
+  if exists (select 1 from tournament_live where team_id = p_team_id) then
+    return tournament_snapshot(v_t.id);
+  end if;
+
+  select id into v_next from tournament_members
+   where team_id = p_team_id and played_at is null
+   order by turn_order limit 1;
+  if v_next is null then
+    raise exception 'add at least one player first' using errcode = 'STB02';
+  end if;
+
+  insert into tournament_live (team_id, member_id) values (p_team_id, v_next);
+
+  perform tournament_touch(v_t.id);
+  return tournament_snapshot(v_t.id);
+end
+$fn$;
+
+-- The whole set of tiles currently down, not a single toggle: idempotent, so a
+-- retried or out-of-order tap cannot leave a board nobody chose.
+create or replace function tournament_set_board(
+  p_code       text,
+  p_team_id    uuid,
+  p_tiles_down smallint[]
+) returns jsonb language plpgsql volatile as $fn$
+declare
+  v_t     tournaments := assert_tournament(p_code);
+  v_rules jsonb;
+  v_tiles smallint;
+  v_clean smallint[];
+begin
+  perform tournament_team_in(v_t.id, p_team_id);   -- STB12
+  select rules into v_rules from rulesets where id = v_t.ruleset_id;
+  v_tiles := ruleset_tiles(v_rules);
+
+  select coalesce(array_agg(distinct x order by x), '{}'::smallint[])
+    into v_clean
+    from unnest(coalesce(p_tiles_down, '{}'::smallint[])) x;
+
+  if exists (select 1 from unnest(v_clean) x where x < 1 or x > v_tiles) then
+    raise exception 'tile out of range for a %-tile board', v_tiles
+      using errcode = 'STB02';
+  end if;
+
+  update tournament_live set tiles_down = v_clean where team_id = p_team_id;
+  if not found then
+    raise exception 'that team is not playing' using errcode = 'STB12';
+  end if;
+
+  perform tournament_touch(v_t.id);
+  return tournament_snapshot(v_t.id);
+end
+$fn$;
+
+-- Ends the member at the board and hands on inside the team. The score is
+-- computed here from the board the server holds, never taken from the client.
 --
--- Both hours are scheduled; run_scheduled_job throws away the wrong one. The
--- weekday field is safe to express in UTC here because none of these times is
--- near midnight, so the UTC day and the Stockholm day always agree.
-select cron.unschedule(jobid)
-  from cron.job
- where jobname in ('stb_prematch', 'stb_monday_digest');
+-- No instant win: shutting the box is a brilliant 0 for that player, and the
+-- next member still rolls, because the team's score is everybody's average.
+create or replace function tournament_end_turn(
+  p_code        text,
+  p_team_id     uuid,
+  p_typed_score integer default null
+) returns jsonb language plpgsql volatile as $fn$
+declare
+  v_t     tournaments := assert_tournament(p_code);
+  v_rules jsonb;
+  v_live  tournament_live;
+  v_open  smallint[];
+  v_score integer;
+  v_next  uuid;
+begin
+  perform tournament_team_in(v_t.id, p_team_id);   -- STB12
+  select rules into v_rules from rulesets where id = v_t.ruleset_id;
 
-select cron.schedule(
-  'stb_prematch',
-  '40 10,11 * * 1-5',
-  $$select run_scheduled_job('/api/cron/prematch', 12)$$
-);
+  select * into v_live from tournament_live where team_id = p_team_id for update;
+  if not found then
+    raise exception 'that team is not playing' using errcode = 'STB12';
+  end if;
 
-select cron.schedule(
-  'stb_monday_digest',
-  '0 8,9 * * 1',
-  $$select run_scheduled_job('/api/cron/morning', 10)$$
-);
+  if p_typed_score is null then
+    v_open := (
+      select coalesce(array_agg(g::smallint order by g), '{}'::smallint[])
+        from generate_series(1, ruleset_tiles(v_rules)) g
+       where not (g = any (v_live.tiles_down))
+    );
+    v_score := ruleset_score(v_rules, v_open);
+  else
+    if p_typed_score < 0 or p_typed_score > ruleset_max_score(v_rules) then
+      raise exception 'that score is not possible on this board'
+        using errcode = 'STB02';
+    end if;
+    -- Played on the real box: there is no board to record.
+    v_open  := null;
+    v_score := p_typed_score;
+  end if;
 
--- The 14:00 "nobody played today" nudge was dropped on 2026-09-14: it fired
--- after the moment it was nudging about. Unschedule it if an older deployment
--- ever created it.
-select cron.unschedule(jobid) from cron.job where jobname = 'stb_afternoon';
+  update tournament_members
+     set score = v_score, tiles_open = v_open, played_at = now()
+   where id = v_live.member_id and team_id = p_team_id;
 
--- cron_runs predates this and still names the jobs; 'afternoon' stays allowed
--- so existing rows keep validating.
-alter table cron_runs drop constraint if exists cron_runs_job_check;
-alter table cron_runs add constraint cron_runs_job_check
-  check (job in ('morning', 'afternoon', 'prematch'));
+  select id into v_next from tournament_members
+   where team_id = p_team_id and played_at is null
+   order by turn_order limit 1;
+
+  if v_next is not null then
+    update tournament_live
+       set member_id = v_next, tiles_down = '{}'
+     where team_id = p_team_id;
+  else
+    -- Everyone has rolled: the team is done, and loses its board.
+    delete from tournament_live where team_id = p_team_id;
+  end if;
+
+  perform tournament_touch(v_t.id);
+  return tournament_snapshot(v_t.id);
+end
+$fn$;
+
+-- Fixing a mistyped score while the event is still open.
+create or replace function tournament_correct_member(
+  p_code      text,
+  p_team_id   uuid,
+  p_member_id uuid,
+  p_score     integer
+) returns jsonb language plpgsql volatile as $fn$
+declare
+  v_t     tournaments := assert_tournament(p_code);
+  v_rules jsonb;
+begin
+  perform tournament_team_in(v_t.id, p_team_id);   -- STB12
+  select rules into v_rules from rulesets where id = v_t.ruleset_id;
+
+  if p_score is null or p_score < 0 or p_score > ruleset_max_score(v_rules) then
+    raise exception 'that score is not possible on this board'
+      using errcode = 'STB02';
+  end if;
+
+  update tournament_members
+     set score = p_score, tiles_open = null, played_at = coalesce(played_at, now())
+   where id = p_member_id and team_id = p_team_id and played_at is not null;
+  if not found then
+    raise exception 'that player has not rolled yet' using errcode = 'STB12';
+  end if;
+
+  perform tournament_touch(v_t.id);
+  return tournament_snapshot(v_t.id);
+end
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Finishing and cleaning up
+-- ---------------------------------------------------------------------------
+
+-- Needs a session, not just the code: crowning is the organiser's call.
+-- Teams still mid-way keep the scores they have and are ranked on them; teams
+-- that never rolled are unranked.
+create or replace function finish_tournament(p_actor uuid, p_code text)
+returns jsonb language plpgsql volatile as $fn$
+declare
+  v_t tournaments := assert_tournament(p_code);   -- STB10 / STB11
+begin
+  if not exists (
+    select 1 from tournament_members tm
+      join tournament_teams tt on tt.id = tm.team_id
+     where tt.tournament_id = v_t.id and tm.score is not null
+  ) then
+    raise exception 'nobody has played yet' using errcode = 'STB05';
+  end if;
+
+  delete from tournament_live
+   where team_id in (select id from tournament_teams where tournament_id = v_t.id);
+
+  -- Status, time and the version bump in ONE update, so the trigger fires once
+  -- and its payload already says finished.
+  update tournaments
+     set status = 'finished', finished_at = now(), version = version + 1
+   where id = v_t.id;
+
+  insert into audit_log (actor_player_id, action, entity, entity_id, after)
+  values (p_actor, 'tournament.finish', 'tournament', v_t.id,
+          jsonb_build_object('code', v_t.code, 'name', v_t.name));
+
+  return tournament_snapshot(v_t.id);
+end
+$fn$;
+
+-- Cleaning up a rehearsal. Works on a finished event too, which is why it does
+-- not go through assert_tournament.
+create or replace function delete_tournament(p_actor uuid, p_code text)
+returns void language plpgsql volatile as $fn$
+declare
+  v_id     uuid;
+  v_before jsonb;
+begin
+  select id into v_id from tournaments
+   where code = tournament_normalize_code(p_code)
+   for update;
+  if v_id is null then
+    raise exception 'no team play has that code' using errcode = 'STB10';
+  end if;
+
+  v_before := tournament_snapshot(v_id);
+
+  insert into audit_log (actor_player_id, action, entity, entity_id, before, note)
+  values (p_actor, 'tournament.delete', 'tournament', v_id, v_before,
+          'deleted the team play');
+
+  -- Explicit rather than by cascade: tournament_live.member_id has no cascade
+  -- of its own, and the order two cascades from the same parent run in is not
+  -- something to bet a party on.
+  delete from tournament_live
+   where team_id in (select id from tournament_teams where tournament_id = v_id);
+  delete from tournaments where id = v_id;
+end
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Privileges
+-- ---------------------------------------------------------------------------
+
+do $grants$
+declare v_fn text;
+begin
+  foreach v_fn in array array[
+    'tournament_normalize_code(text)',
+    'tournament_generate_code()',
+    'tournament_snapshot(uuid)',
+    'tournament_snapshot_by_code(text)',
+    'tournament_touch(uuid)',
+    'broadcast_tournament(uuid)',
+    'assert_tournament(text)',
+    'tournament_team_in(uuid, uuid)',
+    'create_tournament(uuid, text)',
+    'tournament_create_team(text, text, text, text)',
+    'tournament_update_team(text, uuid, text, text, text)',
+    'tournament_delete_team(text, uuid)',
+    'tournament_add_member(text, uuid, text)',
+    'tournament_remove_member(text, uuid, uuid)',
+    'tournament_start_team(text, uuid)',
+    'tournament_set_board(text, uuid, smallint[])',
+    'tournament_end_turn(text, uuid, integer)',
+    'tournament_correct_member(text, uuid, uuid, integer)',
+    'finish_tournament(uuid, text)',
+    'delete_tournament(uuid, text)'
+  ] loop
+    execute format('revoke execute on function %s from public, anon, authenticated', v_fn);
+    execute format('grant execute on function %s to service_role', v_fn);
+  end loop;
+end
+$grants$;
+
+revoke execute on function tournaments_broadcast() from public, anon, authenticated;
+
+comment on table tournaments is
+  'Team play: a one-off event with temporary teams. Separate from games on purpose — nothing here reaches ratings, badges, fika or the stats views.';
+comment on column tournaments.version is
+  'Bumped once per writing RPC, as its last write. The broadcast trigger fires on this column only.';
 
 
 -- ===========================================================================
@@ -189,7 +919,8 @@ values
   ('0017', 'roster'),
   ('0018', 'fika'),
   ('0019', 'cron'),
-  ('0020', 'schedule')
+  ('0020', 'schedule'),
+  ('0021', 'tournament')
 on conflict (version) do nothing;
 
 commit;
