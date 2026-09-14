@@ -81,5 +81,9 @@ describe("activeTab", () => {
     expect(activeTab("/pin")).toBeUndefined();
     expect(activeTab("/whoami")).toBeUndefined();
     expect(activeTab("/game/8f2c")).toBeUndefined();
+    // Team play runs in its own (public) group for guests with no PIN, so it
+    // has no rail either — and must not light somebody else's tab.
+    expect(activeTab("/t/ABC234")).toBeUndefined();
+    expect(activeTab("/t/new")).toBeUndefined();
   });
 });
