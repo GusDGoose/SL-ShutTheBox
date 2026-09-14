@@ -1,12 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireSession, SessionError } from "@/lib/auth";
+import { withSession } from "@/lib/auth";
 import { describeDbError } from "@/lib/db-errors";
 import { checkUpload, photoObjectPath } from "@/lib/storage-paths";
 import { supabaseAdmin } from "@/lib/supabase";
 import { rpc } from "@/lib/db-rows";
-import type { ActionResult } from "@/app/(focus)/game/actions";
+import type { ActionResult } from "@/lib/action-result";
 
 /**
  * Correcting the record.
@@ -24,17 +24,6 @@ export type ResultInput = {
   tilesOpen: number[] | null;
 };
 
-async function withSession<T = object>(
-  run: (actorId: string) => Promise<ActionResult<T>>,
-): Promise<ActionResult<T>> {
-  try {
-    const { player } = await requireSession();
-    return await run(player.id);
-  } catch (e) {
-    if (e instanceof SessionError) return { ok: false, error: e.message };
-    throw e;
-  }
-}
 
 function toRows(results: ResultInput[]) {
   return results.map((r) => ({

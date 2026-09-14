@@ -149,7 +149,9 @@ and functions; needs the local stack running), `npm run e2e` (Playwright).
    - `SUPABASE_SERVICE_ROLE_KEY` — Project Settings → API keys → service_role
      (**secret** — never expose, never prefix with `NEXT_PUBLIC_`)
    - `TEAM_PIN` — the office passcode
-   - `APP_URL` — the deployed URL (for the Teams card button), optional
+   - `APP_URL` — the deployed URL (for the Teams card buttons and the team-play
+     QR code), optional. Only its origin is used: a value pasted from the
+     address bar while on `/pin` once sent every card button through the gate.
    - `SESSION_SECRET` — a long random string; signs the PIN and identity
      cookies. Without it the app fails closed and nobody gets past `/pin`.
    - `CRON_SECRET` — a long random string; the bearer token the two cron

@@ -136,6 +136,26 @@ test("a code nobody handed out is a dead end, not a door", async ({ browser }) =
   await guestContext.close();
 });
 
+test("a stale PIN link into team play goes straight through", async ({ browser }) => {
+  /**
+   * What the QR codes on 2026-09-14 actually encoded: APP_URL in Vercel had
+   * been pasted from the address bar while on the PIN page, so every code
+   * pointed at /pin with the event path glued onto its query. A guest scanning
+   * it saw the gate, and the gate then sent them to Today. The destination
+   * needs no PIN, so the gate must not ask for one.
+   */
+  const guestContext = await browser.newContext();
+  const guest = await guestContext.newPage();
+
+  await guest.goto("/pin?next=%2F/t/ZZZZZZ");
+  await expect(guest).toHaveURL(/\/t\/ZZZZZZ$/);
+  await expect(
+    guest.getByRole("heading", { name: /no team play has that code/i }),
+  ).toBeVisible();
+
+  await guestContext.close();
+});
+
 test("a guest cannot start an event, only join one", async ({ browser }) => {
   const guestContext = await browser.newContext();
   const guest = await guestContext.newPage();

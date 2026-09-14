@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { hasPin, requireSession, SessionError } from "@/lib/auth";
+import { hasPin, withSession } from "@/lib/auth";
 import { checkUpload, clipObjectPath } from "@/lib/storage-paths";
 import { supabaseAdmin } from "@/lib/supabase";
 import { extractVideoId } from "@/lib/youtube";
-import type { ActionResult } from "@/app/(focus)/game/actions";
+import type { ActionResult } from "@/lib/action-result";
 
 // [concept: useActionState contract] These actions take (previousState,
 // formData) and return the new state — React 19's form-state pattern. The
@@ -107,17 +107,6 @@ export async function togglePlayerActive(playerId: string, active: boolean) {
 // write to Storage and go in the audit trail.
 // ---------------------------------------------------------------------------
 
-async function withSession<T = object>(
-  run: (actorId: string) => Promise<ActionResult<T>>,
-): Promise<ActionResult<T>> {
-  try {
-    const { player } = await requireSession();
-    return await run(player.id);
-  } catch (e) {
-    if (e instanceof SessionError) return { ok: false, error: e.message };
-    throw e;
-  }
-}
 
 export type ClipSettings = {
   startSeconds: number;
