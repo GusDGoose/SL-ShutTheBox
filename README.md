@@ -344,8 +344,11 @@ sits on top of it: nobody buys twice until everybody has bought once, so being
 worst decides the order within a cycle, not how often your turn comes round.
 "Worst" is the average normalised finish — `(finish_position - 1) /
 (participants - 1)` — so a last place out of six is not beaten by a last place
-out of three. A week nobody eligible played falls back to random and the card
-says so. Skipping keeps your place in the cycle but takes you out of that
+out of three. That number ranks the draw and is never shown: the card and
+`/fika` give the plain average finishing place instead ("snittplacering 4,5
+på 2 spel"), because the normalised one reads backwards — 1,00 looks like
+first place and means last. A week nobody eligible played falls back to
+random and the card says so. Skipping keeps your place in the cycle but takes you out of that
 week.
 
 The cards it posts are **in Swedish** — they land in a Swedish office's Teams
@@ -396,6 +399,41 @@ select j.jobname, r.status, r.return_message, r.start_time
   from cron.job_run_details r join cron.job j using (jobid)
  order by r.start_time desc limit 20;
 ```
+
+**When a card did not arrive, read these in order.** `job_run_details` says
+`succeeded` even when nothing was sent: `run_scheduled_job()` declines with a
+`raise warning` — no Vault secret, empty `cron_settings`, wrong hour — and a
+warning is all that is left of it. The three questions are *did it fire*,
+*did it call*, and *what came back*:
+
+```sql
+-- did it call, and what did the app answer? 401 = the token differs from
+-- Vercel's CRON_SECRET; no rows at all = it never got as far as pg_net
+select id, status_code, left(content, 120), created
+  from net._http_response order by created desc limit 10;
+
+-- is the token there at all? (should print cron_secret, 48)
+select name, length(decrypted_secret) from vault.decrypted_secrets;
+
+-- and what the app decided, once a request got through
+select * from cron_runs order by ran_at desc limit 10;
+```
+
+This is exactly how 2026-09-14 → 2026-09-22 went missing: the jobs fired to
+the minute for a week, Vault had no `cron_secret`, and not one request left
+the database. The SQL that `Set-CronSecret.ps1` writes to
+`%TEMP%\shut-the-box-cron-secret.sql` holds the value that reached Vercel, so
+the fix is to run that file again — no rotation, no redeploy.
+
+From the office, none of this needs a Postgres connection: the dashboard's
+SQL editor and the Management API
+(`POST https://api.supabase.com/v1/projects/<ref>/database/query`) both go
+over HTTPS. `supabase db query --linked` does **not** — it opens a Postgres
+session and times out here.
+
+Replay a missed day with `?on=YYYY-MM-DD` and the bearer token. A day that
+already has a `cron_runs` row answers `{"ran":false}` without posting
+anything, which makes it the safe way to check that a token is accepted.
 
 ## Still to come
 

@@ -176,7 +176,7 @@ export async function postFikaCard(duty: {
   name: string;
   emoji: string;
   reason: "worst_last_week" | "random_fallback";
-  badness?: number | null;
+  avgFinish?: number | null;
   games?: number | null;
 }): Promise<boolean> {
   const appUrl = appOrigin(process.env.APP_URL);

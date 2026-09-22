@@ -1,4 +1,4 @@
--- pgTAP: the fika rota (migration 0018).
+-- pgTAP: the fika rota (migration 0018, draw_fika as redefined in 0022).
 --
 -- The office rule, in full:
 --   * the worst player of last week buys, where "worst" is the average
@@ -12,7 +12,7 @@
 --     fire twice and a person can press Redraw while it does.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(26);
+select plan(27);
 
 -- This test has to OWN the roster and the rota, because both are statements
 -- about global state: cycle exhaustion depends on every active player, and
@@ -78,6 +78,15 @@ select is(
   (select reason from fika_duties where week_start = date '2026-09-07'),
   'worst_last_week',
   'and the reason says so'
+);
+
+-- Ben came third of three in both games. The card shows this number — the
+-- normalised badness (1.000 here) is what the draw RANKS by, and read as a
+-- placing it says the opposite of what it means (0022).
+select is(
+  (select detail->>'avg_finish' from fika_duties where week_start = date '2026-09-07'),
+  '3.0',
+  'the detail carries the real average finishing place'
 );
 
 select is(

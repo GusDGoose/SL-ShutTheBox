@@ -159,19 +159,32 @@ export function prematchBlocks(fika: FikaLine): CardBlock[] {
   ];
 }
 
-/** Monday, once the rota has drawn. */
+/**
+ * Monday, once the rota has drawn.
+ *
+ * `avgFinish` is the plain average finishing place (4,5 on two games), NOT
+ * the normalised 0–1 badness the draw ranks by. The card once showed the
+ * badness under the name "snittplacering", and "1,00" read as "came first"
+ * the week the buyer had come last twice. A duty drawn before 0022 has no
+ * average to show, and the line simply leaves the number out.
+ */
 export function fikaBlocks(duty: {
   name: string;
   emoji: string;
   reason: "worst_last_week" | "random_fallback";
-  badness?: number | null;
+  avgFinish?: number | null;
   games?: number | null;
 }): CardBlock[] {
+  const played = games(duty.games ?? 0);
+  const worst =
+    duty.avgFinish == null
+      ? `Sämst förra veckan på ${played}.`
+      : `Sämst förra veckan — snittplacering ${decimal(Number(duty.avgFinish), 1)} på ${played}.`;
   return [
     heading(`☕ ${duty.emoji} ${duty.name} bjuder på fika denna vecka`),
     text(
       duty.reason === "worst_last_week"
-        ? `Sämst förra veckan — snittplacering ${decimal(Number(duty.badness ?? 0))} över ${games(duty.games ?? 0)}.`
+        ? worst
         : "Ingen behörig spelade förra veckan, så lotten fick avgöra.",
     ),
   ];
