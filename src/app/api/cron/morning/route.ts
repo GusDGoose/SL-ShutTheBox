@@ -72,7 +72,7 @@ export async function GET(request: Request) {
       const d = duty as {
         player_id: string;
         reason: "worst_last_week" | "random_fallback";
-        detail: { badness?: number; games?: number };
+        detail: { avg_finish?: number; games?: number };
       } | null;
       result.fika = d?.player_id ?? null;
 
@@ -87,7 +87,7 @@ export async function GET(request: Request) {
           result.fikaCardPosted = await postFikaCard({
             ...person,
             reason: d.reason,
-            badness: d.detail?.badness ?? null,
+            avgFinish: d.detail?.avg_finish ?? null,
             games: d.detail?.games ?? null,
           });
         }

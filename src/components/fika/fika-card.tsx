@@ -13,8 +13,9 @@ import type { FikaDuty } from "@/lib/queries/fika";
  * Who is buying fika this week.
  *
  * Shown on Today as a one-liner and on /fika with the reasoning, because the
- * reasoning is the whole point: "worst last week, average finish 0.83 over 3
- * games" ends an argument that "you lost" does not.
+ * reasoning is the whole point: "worst last week, average finish 4.5 over 2
+ * games" ends an argument that "you lost" does not. It is the real finishing
+ * place — the normalised badness the draw ranks by reads backwards.
  */
 export function FikaCard({
   duty,
@@ -64,9 +65,12 @@ export function FikaCard({
     );
   }
 
+  const played = `${duty.detail.games ?? 0} game${duty.detail.games === 1 ? "" : "s"}`;
   const why =
     duty.reason === "worst_last_week"
-      ? `Worst last week — average finish ${Number(duty.detail.badness ?? 0).toFixed(2)} over ${duty.detail.games ?? 0} game${duty.detail.games === 1 ? "" : "s"}.`
+      ? duty.detail.avg_finish == null
+        ? `Worst last week over ${played}.`
+        : `Worst last week — average finish ${Number(duty.detail.avg_finish).toFixed(1)} over ${played}.`
       : "Nobody eligible played last week, so this one was drawn at random.";
 
   return (

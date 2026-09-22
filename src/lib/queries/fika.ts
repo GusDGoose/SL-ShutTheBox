@@ -10,7 +10,15 @@ export type FikaDuty = {
   name: string;
   emoji: string;
   reason: "worst_last_week" | "random_fallback";
-  detail: { badness?: number; games?: number; from?: string; to?: string };
+  detail: {
+    /** What the draw ranked by: normalised finish, 0 = won, 1 = last. */
+    badness?: number;
+    /** What people are shown: the plain average finishing place (0022). */
+    avg_finish?: number;
+    games?: number;
+    from?: string;
+    to?: string;
+  };
   drawn_at: string;
   duties_total: number;
 };

@@ -151,13 +151,44 @@ describe("fikaBlocks", () => {
         name: "Ben",
         emoji: "🐙",
         reason: "worst_last_week",
-        badness: 0.8333,
-        games: 3,
+        avgFinish: 4.5,
+        games: 2,
       }),
     );
     expect(out).toContain("🐙 Ben bjuder på fika denna vecka");
-    // Swedish decimal comma, not a full stop.
-    expect(out).toContain("snittplacering 0,83 över 3 spel");
+    // The real average finishing place, with a Swedish decimal comma. The
+    // normalised 0–1 "badness" the draw ranks by is NOT shown: "snittplacering
+    // 1,00" read as "came first", the week Per-Erik came last twice.
+    expect(out).toContain("snittplacering 4,5 på 2 spel");
+    expect(out).not.toMatch(/[01],\d\d/);
+  });
+
+  it("keeps a whole number honest and singular", () => {
+    const out = said(
+      fikaBlocks({
+        name: "Ben",
+        emoji: "🐙",
+        reason: "worst_last_week",
+        avgFinish: 3,
+        games: 1,
+      }),
+    );
+    expect(out).toContain("snittplacering 3,0 på 1 spel");
+  });
+
+  it("leaves the number out when a draw predates it", () => {
+    // Duties drawn before 0022 have no avg_finish in their detail.
+    const out = said(
+      fikaBlocks({
+        name: "Ben",
+        emoji: "🐙",
+        reason: "worst_last_week",
+        avgFinish: null,
+        games: 2,
+      }),
+    );
+    expect(out).toContain("Sämst förra veckan på 2 spel.");
+    expect(out).not.toContain("snittplacering");
   });
 
   it("is honest when the draw was random", () => {
