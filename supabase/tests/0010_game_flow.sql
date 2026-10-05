@@ -5,7 +5,7 @@
 -- these tests are read far more often than they are written.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(43);
+select plan(46);
 
 -- ---------------------------------------------------------------------------
 -- Fixture: our own players, so nothing here depends on seed.sql or on whatever
@@ -269,34 +269,34 @@ select lives_ok(
       (select array_agg(t::smallint) from generate_series(1,12) t))$$,
   'the first player shuts the box'
 );
-select lives_ok(
-  $$select end_turn('a1100000-0000-4000-8000-000000000002', (select id from g2))$$,
-  'and ends their turn'
-);
-
--- They were at the table, so they get a row saying they never rolled. v1 wrote
--- no row at all, which left a colleague who turned up statistically invisible.
 select is(
-  (select count(*)::int from game_players
-    where game_id = (select id from g2) and status = 'dnp'),
-  2,
-  'the players who never got a turn are recorded as such'
-);
-
--- Correcting the score means nobody shut the box after all, so the skipped
--- players are owed their turns back.
-select is(
-  set_turn_result('a1100000-0000-4000-8000-000000000002', (select id from g2),
-                  'a1100000-0000-4000-8000-000000000002', '{7}', 7)
+  end_turn('a1100000-0000-4000-8000-000000000002', (select id from g2))
     -> 'turn' ->> 'player_id',
   'a1100000-0000-4000-8000-000000000001',
-  'correcting away a shut box hands the skipped players their turns back'
+  'a shut box does not end the game: the next player is up'
 );
 select is(
   (select count(*)::int from game_players
     where game_id = (select id from g2) and status = 'dnp'),
   0,
-  'and nobody is left marked as skipped'
+  'and nobody is marked as skipped'
+);
+
+-- set_turn_result used to hand turns "back" whenever no board was empty, even
+-- with nobody skipped — which, mid-game, put the next waiting player up while
+-- someone was already rolling.
+select is(
+  set_turn_result('a1100000-0000-4000-8000-000000000002', (select id from g2),
+                  'a1100000-0000-4000-8000-000000000002', '{7}', 7)
+    -> 'turn' ->> 'player_id',
+  'a1100000-0000-4000-8000-000000000001',
+  'correcting a turn with nobody skipped leaves the turn where it was'
+);
+select is(
+  (select count(*)::int from game_players
+    where game_id = (select id from g2) and status = 'playing'),
+  1,
+  'and never puts two players up at once'
 );
 
 -- [concept: all or nothing] finish_game writes the status, clears the live
@@ -322,6 +322,66 @@ select ok(
   not exists (select 1 from audit_log
                where entity_id = (select id from g2) and action = 'game.finish'),
   'and wrote no audit row for a finish that did not happen'
+);
+
+-- ---------------------------------------------------------------------------
+-- The instant win is still a ruleset setting: a seasonal ruleset may turn it on
+--
+-- No seeded ruleset does any more (0023), so this one is made up for the test,
+-- and its game is put on the table directly, in 2019, out of everyone's way.
+-- ---------------------------------------------------------------------------
+insert into rulesets (slug, name, is_active, rules)
+select 'flow-instant-win', 'Flow instant win', false,
+       jsonb_set(rules, '{shut_box,instant_win}', 'true'::jsonb)
+  from rulesets where slug = 'vanilla-12';
+
+insert into games (id, played_on, ruleset_id, season_id, status,
+                   scorekeeper_player_id, created_by)
+select 'a1100000-0000-4000-8000-0000000000f3', '2019-05-02', r.id,
+       ensure_season('2019-05-02'), 'in_progress',
+       'a1100000-0000-4000-8000-000000000003', 'a1100000-0000-4000-8000-000000000003'
+  from rulesets r where r.slug = 'flow-instant-win';
+insert into game_players (game_id, player_id, turn_order, status) values
+  ('a1100000-0000-4000-8000-0000000000f3', 'a1100000-0000-4000-8000-000000000003', 1, 'playing'),
+  ('a1100000-0000-4000-8000-0000000000f3', 'a1100000-0000-4000-8000-000000000001', 2, 'pending'),
+  ('a1100000-0000-4000-8000-0000000000f3', 'a1100000-0000-4000-8000-000000000002', 3, 'pending');
+insert into live_turns (game_id, player_id)
+values ('a1100000-0000-4000-8000-0000000000f3', 'a1100000-0000-4000-8000-000000000003');
+
+do $shut$
+begin
+  perform live_set_board('a1100000-0000-4000-8000-000000000003',
+    'a1100000-0000-4000-8000-0000000000f3',
+    (select array_agg(t::smallint) from generate_series(1,12) t));
+  perform end_turn('a1100000-0000-4000-8000-000000000003',
+    'a1100000-0000-4000-8000-0000000000f3');
+end
+$shut$;
+
+-- They were at the table, so they get a row saying they never rolled. v1 wrote
+-- no row at all, which left a colleague who turned up statistically invisible.
+select is(
+  (select count(*)::int from game_players
+    where game_id = 'a1100000-0000-4000-8000-0000000000f3' and status = 'dnp'),
+  2,
+  'under an instant-win ruleset the players who never got a turn are recorded as such'
+);
+
+-- Correcting the score means nobody shut the box after all, so the skipped
+-- players are owed their turns back.
+select is(
+  set_turn_result('a1100000-0000-4000-8000-000000000003',
+                  'a1100000-0000-4000-8000-0000000000f3',
+                  'a1100000-0000-4000-8000-000000000003', '{7}', 7)
+    -> 'turn' ->> 'player_id',
+  'a1100000-0000-4000-8000-000000000001',
+  'correcting away a shut box hands the skipped players their turns back'
+);
+select is(
+  (select count(*)::int from game_players
+    where game_id = 'a1100000-0000-4000-8000-0000000000f3' and status = 'dnp'),
+  0,
+  'and nobody is left marked as skipped'
 );
 
 select * from finish();

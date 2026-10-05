@@ -12,7 +12,7 @@
 --   * scorekeeper only, one broadcast each, audited as game.join / game.leave.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(25);
+select plan(27);
 
 insert into players (id, name, emoji, is_active) values
   ('ff110000-0000-4000-8000-000000000001', 'Roster Ada',  '🦊', true),
@@ -211,7 +211,7 @@ select lives_ok(
 );
 
 -- ---------------------------------------------------------------------------
--- No joining after a shut box
+-- A shut box no longer ends the game (0023), so a late joiner is still welcome
 -- ---------------------------------------------------------------------------
 select lives_ok(
   $$select start_game('ff110000-0000-4000-8000-000000000002',
@@ -234,11 +234,56 @@ begin
 end
 $shut$;
 
-select throws_ok(
+select lives_ok(
   $$select join_game('ff110000-0000-4000-8000-000000000002',
       (select id from shut_game), 'ff110000-0000-4000-8000-000000000003')$$,
+  'joining after a shut box works: the game goes on'
+);
+select is(
+  (select status::text from game_players
+    where game_id = (select id from shut_game)
+      and player_id = 'ff110000-0000-4000-8000-000000000003'),
+  'pending',
+  'and the joiner waits behind Dev like anyone else'
+);
+
+-- ---------------------------------------------------------------------------
+-- Under a ruleset that still ends the game on a shut box, nobody joins after one
+--
+-- No seeded ruleset does any more, so this one is made up for the test, with
+-- its game put on the table directly in 2019.
+-- ---------------------------------------------------------------------------
+insert into rulesets (slug, name, is_active, rules)
+select 'roster-instant-win', 'Roster instant win', false,
+       jsonb_set(rules, '{shut_box,instant_win}', 'true'::jsonb)
+  from rulesets where slug = 'vanilla-12';
+
+insert into games (id, played_on, ruleset_id, season_id, status,
+                   scorekeeper_player_id, created_by)
+select 'ff110000-0000-4000-8000-0000000000f1', '2019-05-03', r.id,
+       ensure_season('2019-05-03'), 'in_progress',
+       'ff110000-0000-4000-8000-000000000003', 'ff110000-0000-4000-8000-000000000003'
+  from rulesets r where r.slug = 'roster-instant-win';
+insert into game_players (game_id, player_id, turn_order, status) values
+  ('ff110000-0000-4000-8000-0000000000f1', 'ff110000-0000-4000-8000-000000000003', 1, 'playing'),
+  ('ff110000-0000-4000-8000-0000000000f1', 'ff110000-0000-4000-8000-000000000004', 2, 'pending');
+insert into live_turns (game_id, player_id)
+values ('ff110000-0000-4000-8000-0000000000f1', 'ff110000-0000-4000-8000-000000000003');
+
+do $shut2$
+begin
+  perform live_set_board('ff110000-0000-4000-8000-000000000003',
+    'ff110000-0000-4000-8000-0000000000f1', '{1,2,3,4,5,6,7,8,9,10,11,12}');
+  perform end_turn('ff110000-0000-4000-8000-000000000003',
+    'ff110000-0000-4000-8000-0000000000f1');  -- shut
+end
+$shut2$;
+
+select throws_ok(
+  $$select join_game('ff110000-0000-4000-8000-000000000003',
+      'ff110000-0000-4000-8000-0000000000f1', 'ff110000-0000-4000-8000-000000000001')$$,
   'STB02', null,
-  'the box was shut, the game is over by rule, nobody joins now'
+  'under an instant-win ruleset the box being shut ended the game: nobody joins now'
 );
 
 select * from finish();
