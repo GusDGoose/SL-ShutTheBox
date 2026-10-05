@@ -9,6 +9,7 @@ import { PlayerPicker } from "@/components/player-picker";
 import { Button } from "@/components/ui/button";
 import {
   boardTiles,
+  instantWinOf,
   maxScoreOf,
   scoreOf,
   tilesOf,
@@ -79,7 +80,18 @@ export function RecordGameForm({
 
   const rules = rulesFor(date, seasons, defaultRules);
   const max = maxScoreOf(rules);
+  // "Never got a turn" only exists where a shut box ends the game. Under the
+  // house rules since 0023 everybody rolls, so the option would only invite a
+  // record of something that cannot happen.
+  const allowNoTurn = instantWinOf(rules);
   const byId = new Map(roster.map((p) => [p.id, p]));
+
+  // What is being entered for a player. A date change can move the game under
+  // rules without "No turn", and then a stored one reads as not yet entered.
+  function entryFor(id: string): Entry {
+    const stored = entries[id] ?? { kind: "typed", text: "" };
+    return stored.kind === "dnp" && !allowNoTurn ? { kind: "typed", text: "" } : stored;
+  }
 
   function toggle(id: string) {
     setOrder((prev) =>
@@ -101,7 +113,7 @@ export function RecordGameForm({
     | { id: string; state: "ok"; result: ResultInput };
 
   const rows: Row[] = order.map((id) => {
-    const entry = entries[id] ?? { kind: "typed", text: "" };
+    const entry = entryFor(id);
     const name = byId.get(id)?.name ?? "That player";
     if (entry.kind === "dnp") {
       return {
@@ -244,7 +256,7 @@ export function RecordGameForm({
             {order.map((id, i) => {
               const p = byId.get(id);
               const name = p?.name ?? "?";
-              const entry = entries[id] ?? { kind: "typed", text: "" };
+              const entry = entryFor(id);
               return (
                 <li
                   key={id}
@@ -314,7 +326,7 @@ export function RecordGameForm({
                     </>
                   )}
 
-                  {entry.kind !== "dnp" && (
+                  {allowNoTurn && entry.kind !== "dnp" && (
                     <button
                       type="button"
                       aria-label={`${name} never got a turn`}
@@ -329,9 +341,14 @@ export function RecordGameForm({
             })}
           </ul>
           <p className="text-xs text-ink-muted">
-            Type the score, or set the tiles if you know them. &ldquo;No
-            turn&rdquo; is for somebody who was at the table when the box was
-            shut before they rolled.
+            Type the score, or set the tiles if you know them.
+            {allowNoTurn && (
+              <>
+                {" "}
+                &ldquo;No turn&rdquo; is for somebody who was at the table when
+                the box was shut before they rolled.
+              </>
+            )}
           </p>
         </section>
       )}

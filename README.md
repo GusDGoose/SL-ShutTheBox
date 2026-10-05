@@ -3,7 +3,8 @@
 Daily office Shut the Box tracker. One person keeps score on a tappable replica
 of the board while everyone else watches it live on their own phone; the day's
 winner is crowned with confetti and their victory song. Lowest score wins the
-day, ties share it, and 0 — 📦 shut the box — ends the game on the spot.
+day and ties share it. A 0 — 📦 shut the box — is a very good turn, not the end
+of the game: everybody still rolls, and one game a day is the one that counts.
 
 **Stack:** Next.js 16 (App Router) on Vercel · Supabase Postgres · Tailwind v4.
 
@@ -319,8 +320,11 @@ a fresh project.
   in v1 and the office decided it was the best part of the game, so it is
   deliberate now. Do not turn it into a queue.
 - `game_players.status = 'dnp'` means "was at the table and never got a turn
-  because the box was shut". It is not "did not show up" — a player who was
-  picked and then leaves is removed from the game entirely.
+  because the box was shut" — historical since 0023, when the house rulesets
+  stopped ending the game on a shut box; old games keep those rows, and a
+  ruleset with `shut_box.instant_win` on would write them again. It is not "did
+  not show up" — a player who was picked and then leaves is removed from the
+  game entirely.
 - Generated types mark **every view column nullable** — Postgres cannot prove
   a computed column is NOT NULL. The hand-written row types in
   `src/lib/queries/*` are the ones telling the truth; `unwrapRows` in
@@ -437,9 +441,6 @@ anything, which makes it the safe way to check that a token is accepted.
 
 ## Still to come
 
-- **A typed 0 should end the game** the way an empty board does; today only the
-  board triggers the instant win, though `game_results` counts both as a shut
-  box.
 - **`cacheComponents`** — the readers in `src/lib/queries/*` are shaped for
   `'use cache'` and tags, but every route is still fully dynamic.
 - Deliberately not building: an in-app dice roller, or predict-the-winner.

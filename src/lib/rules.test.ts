@@ -21,7 +21,8 @@ const VANILLA: Ruleset = {
   tiles: 12,
   scoring: { kind: "sum_open" },
   win: "lowest",
-  shut_box: { instant_win: true },
+  // false since 0023: a shut box no longer ends the game.
+  shut_box: { instant_win: false },
   dice: { count: 2, one_die_rule: { kind: "when_all_above_shut", threshold: 6 } },
   modifiers: [],
   ties: "share",
@@ -189,8 +190,13 @@ describe("board and labels", () => {
   });
 
   it("reports whether a zero ends the game", () => {
-    expect(instantWinOf(VANILLA)).toBe(true);
-    expect(instantWinOf({ ...VANILLA, shut_box: { instant_win: false } })).toBe(false);
+    expect(instantWinOf(VANILLA)).toBe(false);
+    expect(instantWinOf({ ...VANILLA, shut_box: { instant_win: true } })).toBe(true);
+  });
+
+  it("treats a ruleset that does not say as the old rule", () => {
+    const silent = { ...VANILLA, shut_box: undefined } as unknown as Ruleset;
+    expect(instantWinOf(silent)).toBe(true);
   });
 });
 
@@ -238,6 +244,11 @@ describe("describeRules", () => {
   it("reflects whether a zero ends the game", () => {
     expect(
       describeRules(VANILLA).find((s) => s.heading === "Shut the box")!.body,
+    ).toContain("play continues");
+    expect(
+      describeRules({ ...VANILLA, shut_box: { instant_win: true } }).find(
+        (s) => s.heading === "Shut the box",
+      )!.body,
     ).toContain("ends on the spot");
   });
 

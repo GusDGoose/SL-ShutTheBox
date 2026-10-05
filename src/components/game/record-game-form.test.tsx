@@ -161,6 +161,24 @@ describe("RecordGameForm", () => {
     });
   });
 
+  it("hides No turn when a zero does not end the game", async () => {
+    const user = userEvent.setup();
+    render(
+      <RecordGameForm
+        roster={[ALICE, BOB]}
+        seasons={[]}
+        defaultRules={{ ...VANILLA, shut_box: { instant_win: false } }}
+        today={TODAY}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Alice/ }));
+
+    expect(
+      screen.queryByRole("button", { name: "Alice never got a turn" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/box was shut before they rolled/)).not.toBeInTheDocument();
+  });
+
   it("derives the score from the tiles when the board is used", async () => {
     const user = userEvent.setup();
     renderForm();
