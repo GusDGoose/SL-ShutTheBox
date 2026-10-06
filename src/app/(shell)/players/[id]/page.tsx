@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { SongClipEditor } from "@/components/players/song-clip-editor";
 import { BadgeGrid } from "@/components/stats/badge-grid";
 import { Heatstrip } from "@/components/stats/heatstrip";
 import { RatingChart } from "@/components/stats/rating-chart";
@@ -8,16 +9,17 @@ import { buttonClass } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getIdentity } from "@/lib/auth";
 import { dayLabel, stockholmToday } from "@/lib/dates";
+import { isUuid } from "@/lib/db-rows";
 import { getPlayerProfile } from "@/lib/queries/history";
 import { getFikaTally } from "@/lib/queries/fika";
+import { songLabelFor } from "@/lib/queries/song-titles";
+import { BenchToggle, ProfileForm } from "../player-form";
 
 export const dynamic = "force-dynamic";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export async function generateMetadata({ params }: PageProps<"/players/[id]">) {
   const { id } = await params;
-  const profile = UUID.test(id) ? await getPlayerProfile(id) : null;
+  const profile = isUuid(id) ? await getPlayerProfile(id) : null;
   return {
     title: profile ? `${profile.player.name} · Shut the Box` : "Player · Shut the Box",
   };
@@ -35,10 +37,16 @@ function Tile({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
-/** One player: who they are at the table, in numbers and pictures. */
+/**
+ * One player: who they are at the table, in numbers and pictures.
+ *
+ * Your own profile is also where you set what is yours — your name, emoji and
+ * song — first thing on the page. Everyone else's is read-only; the actions
+ * refuse a change to someone else's profile on the server too (withSelf).
+ */
 export default async function PlayerPage({ params }: PageProps<"/players/[id]">) {
   const { id } = await params;
-  if (!UUID.test(id)) notFound();
+  if (!isUuid(id)) notFound();
 
   const [profile, me, fikaTally] = await Promise.all([
     getPlayerProfile(id),
@@ -50,6 +58,7 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
   const { player, stats, streak, rating, ratingRank } = profile;
   const isMe = me?.id === player.id;
   const played = (stats?.games_played ?? 0) > 0;
+  const song = await songLabelFor(player);
 
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-8 p-4 sm:p-6">
@@ -85,8 +94,29 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
           ) : (
             <p className="text-sm text-ink-muted">Not rated yet.</p>
           )}
+          {song && (
+            <p className="truncate text-sm text-ink-muted">
+              <span aria-hidden>🎵 </span>
+              <span className="sr-only">Song: </span>
+              {song}
+            </p>
+          )}
         </div>
       </header>
+
+      {/* ---------------- Yours to set ---------------- */}
+      {isMe && (
+        <section
+          aria-labelledby="your-song"
+          className="flex flex-col gap-4 rounded-[var(--radius-card)] border border-brass/50 bg-surface p-4"
+        >
+          <h2 id="your-song" className="eyebrow">
+            Your song
+          </h2>
+          <ProfileForm player={player} />
+          <SongClipEditor player={player} />
+        </section>
+      )}
 
       {!played ? (
         <EmptyState
@@ -101,6 +131,14 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
         />
       ) : (
         <>
+          {/* ---------------- Badges ---------------- */}
+          <section className="flex flex-col gap-2">
+            <h2 className="eyebrow">
+              Badges · {profile.earned.length} of {profile.catalog.length}
+            </h2>
+            <BadgeGrid catalog={profile.catalog} earned={profile.earned} />
+          </section>
+
           {/* ---------------- Tiles ---------------- */}
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Tile label="Games" value={String(stats!.games_played)} />
@@ -135,7 +173,7 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
               <Tile
                 label="Boxed out"
                 value={String(stats!.dnp_count)}
-                hint="turns lost to a shut box"
+                hint="turns lost under the old shut-box rule"
               />
             )}
             {rating && (
@@ -182,14 +220,6 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
             </section>
           )}
 
-          {/* ---------------- Badges ---------------- */}
-          <section className="flex flex-col gap-2">
-            <h2 className="eyebrow">
-              Badges · {profile.earned.length} of {profile.catalog.length}
-            </h2>
-            <BadgeGrid catalog={profile.catalog} earned={profile.earned} />
-          </section>
-
           {/* ---------------- Scrapbook ---------------- */}
           <PhotoStrip
             photos={profile.recent
@@ -225,13 +255,19 @@ export default async function PlayerPage({ params }: PageProps<"/players/[id]">)
         </>
       )}
 
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap items-start gap-3 border-t border-line pt-4">
         <Link href="/players" className={buttonClass("secondary")}>
           ← Players
         </Link>
         <Link href="/stats" className={buttonClass("ghost")}>
           Stats
         </Link>
+        {isMe && (
+          <Link href="/whoami?next=%2Fplayers" className={buttonClass("ghost")}>
+            Not you? Switch player
+          </Link>
+        )}
+        <BenchToggle player={player} isMe={isMe} />
       </div>
     </main>
   );

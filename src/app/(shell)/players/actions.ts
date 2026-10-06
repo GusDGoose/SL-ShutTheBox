@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { hasPin, withSession } from "@/lib/auth";
+import { NOT_YOUR_PROFILE, getIdentity, hasPin, withPin, withSelf } from "@/lib/auth";
 import { checkUpload, clipObjectPath } from "@/lib/storage-paths";
 import { supabaseAdmin } from "@/lib/supabase";
 import { extractVideoId } from "@/lib/youtube";
@@ -21,6 +21,12 @@ function readForm(formData: FormData) {
   return { name, emoji, songUrl };
 }
 
+/** The overview and the profile both show a player, so both go stale together. */
+function touched(playerId?: string) {
+  revalidatePath("/players");
+  if (playerId) revalidatePath(`/players/${playerId}`);
+}
+
 function validate({ name, songUrl }: { name: string; songUrl: string }) {
   if (!name) return "Name is required.";
   if (songUrl && !extractVideoId(songUrl)) {
@@ -37,14 +43,15 @@ export async function createPlayer(
   // render-time gating is not a security boundary. PIN only, on purpose: a
   // new colleague adds themselves before they have an identity to pick.
   if (!(await hasPin())) return { error: "Enter the team PIN first." };
-  const fields = readForm(formData);
+  // Name and emoji only. The song is each player's own to set, on their own
+  // profile, once they have said who they are.
+  const fields = { ...readForm(formData), songUrl: "" };
   const invalid = validate(fields);
   if (invalid) return { error: invalid };
 
   const { error } = await supabaseAdmin().from("players").insert({
     name: fields.name,
     emoji: fields.emoji,
-    song_url: fields.songUrl || null,
   });
   if (error) {
     // 23505 = Postgres unique_violation (players.name is unique)
@@ -55,16 +62,20 @@ export async function createPlayer(
           : error.message,
     };
   }
-  revalidatePath("/players");
+  touched();
   return { ok: true, key: Date.now() };
 }
 
+/** Name, emoji and song link — your own, from your own profile. */
 export async function updatePlayer(
   playerId: string,
   _prev: PlayerFormState,
   formData: FormData,
 ): Promise<PlayerFormState> {
   if (!(await hasPin())) return { error: "Enter the team PIN first." };
+  const me = await getIdentity();
+  if (!me) return { error: "Tell us who you are first." };
+  if (me.id !== playerId) return { error: NOT_YOUR_PROFILE };
   const fields = readForm(formData);
   const invalid = validate(fields);
   if (invalid) return { error: invalid };
@@ -85,18 +96,27 @@ export async function updatePlayer(
           : error.message,
     };
   }
-  revalidatePath("/players");
+  touched(playerId);
   return { ok: true };
 }
 
-export async function togglePlayerActive(playerId: string, active: boolean) {
-  if (!(await hasPin())) throw new Error("Enter the team PIN first.");
-  const { error } = await supabaseAdmin()
-    .from("players")
-    .update({ is_active: active })
-    .eq("id", playerId);
-  if (error) throw new Error(error.message);
-  revalidatePath("/players");
+/**
+ * Benching is looking after the roster, not something personal, so anyone
+ * with the PIN can do it — from any profile.
+ */
+export async function togglePlayerActive(
+  playerId: string,
+  active: boolean,
+): Promise<ActionResult> {
+  return withPin(async () => {
+    const { error } = await supabaseAdmin()
+      .from("players")
+      .update({ is_active: active })
+      .eq("id", playerId);
+    if (error) return { ok: false, error: error.message };
+    touched(playerId);
+    return { ok: true };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +198,7 @@ export async function setSongClip(
   playerId: string,
   settings: ClipSettings,
 ): Promise<ActionResult> {
-  return withSession(async (actorId) => {
+  return withSelf(playerId, async (actorId) => {
     const invalid = validateClip(settings);
     if (invalid) return { ok: false, error: invalid };
 
@@ -197,7 +217,7 @@ export async function setSongClip(
     if (error) return { ok: false, error: error.message };
 
     await auditSong(actorId, playerId, before, "clip settings changed");
-    revalidatePath("/players");
+    touched(playerId);
     return { ok: true };
   });
 }
@@ -211,7 +231,7 @@ export async function uploadSongClip(
   playerId: string,
   formData: FormData,
 ): Promise<ActionResult> {
-  return withSession(async (actorId) => {
+  return withSelf(playerId, async (actorId) => {
     const file = formData.get("clip");
     if (!(file instanceof File)) return { ok: false, error: "No clip was attached." };
     const problem = checkUpload("clip", file);
@@ -244,14 +264,14 @@ export async function uploadSongClip(
     if (error) return { ok: false, error: error.message };
 
     await auditSong(actorId, playerId, before, "clip uploaded");
-    revalidatePath("/players");
+    touched(playerId);
     return { ok: true };
   });
 }
 
 /** Back to the YouTube URL. Row first, then the object, as with photos. */
 export async function clearSongClip(playerId: string): Promise<ActionResult> {
-  return withSession(async (actorId) => {
+  return withSelf(playerId, async (actorId) => {
     const before = await songOf(playerId);
     const path = before?.song_clip_path;
     if (!before || !path) return { ok: true };
@@ -265,7 +285,7 @@ export async function clearSongClip(playerId: string): Promise<ActionResult> {
     await sb.storage.from("song-clips").remove([path]);
 
     await auditSong(actorId, playerId, before, "clip removed");
-    revalidatePath("/players");
+    touched(playerId);
     return { ok: true };
   });
 }

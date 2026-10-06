@@ -158,3 +158,25 @@ export async function withPin<T = object>(
   if (!(await hasPin())) return { ok: false, error: "Enter the team PIN first." };
   return run();
 }
+
+/** What someone hears when they try to change a profile that is not theirs. */
+export const NOT_YOUR_PROFILE =
+  "That's someone else's profile — only they can change it.";
+
+/**
+ * withSession, for changes a player makes about themselves: their name, emoji
+ * and song. The Players page used to let anyone edit anyone's song; the check
+ * is here, on the server, because an action is a POST anybody can send.
+ *
+ * Identity is "pick your name on this device", not a password, so this keeps
+ * honest people from changing each other's things by accident — someone who
+ * really wants to can switch player first, and the audit trail says so.
+ */
+export async function withSelf<T = object>(
+  playerId: string,
+  run: (actorId: string) => Promise<ActionResult<T>>,
+): Promise<ActionResult<T>> {
+  return withSession<T>(async (actorId) =>
+    actorId === playerId ? run(actorId) : { ok: false, error: NOT_YOUR_PROFILE },
+  );
+}

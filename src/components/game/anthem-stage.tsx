@@ -201,7 +201,7 @@ export function AnthemStage({ anthems }: { anthems: Anthem[] }) {
       {withoutSongs.map((anthem) => (
         <p key={anthem.playerId} className="text-sm text-ink-muted">
           {anthem.emoji} {anthem.name} has no victory song yet —{" "}
-          <Link href="/players" className="font-semibold underline">
+          <Link href={`/players/${anthem.playerId}`} className="font-semibold underline">
             set one for next time
           </Link>
           .

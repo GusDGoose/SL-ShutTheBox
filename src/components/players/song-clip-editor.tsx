@@ -149,7 +149,7 @@ const field =
         <span className="eyebrow">Anthem clip</span>
         {hasFile ? (
           <span className="text-ink-muted">
-            Playing their own clip
+            Playing your own clip
             {videoId && " — the YouTube link is kept as a fallback"}
           </span>
         ) : videoId ? (

@@ -42,7 +42,7 @@ export default async function WhoAmIPage({
           <p className="text-ink-muted">
             Nobody is on the roster yet — somebody has to go first.
           </p>
-          <Link href="/players" className={buttonClass("primary", "lg")}>
+          <Link href="/players?add" className={buttonClass("primary", "lg")}>
             Add the first player
           </Link>
         </div>
@@ -51,7 +51,7 @@ export default async function WhoAmIPage({
           <WhoAmI players={players} next={safeNext} />
           <p className="text-xs text-ink-muted">
             Not on the roster?{" "}
-            <Link href="/players" className="font-semibold underline">
+            <Link href="/players?add" className="font-semibold underline">
               Add yourself
             </Link>
             .
