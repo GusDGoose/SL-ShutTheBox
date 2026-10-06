@@ -14,6 +14,11 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(55);
 
+-- How many daily games exist before any of this runs. A dev database holds
+-- real ones, so "none were written" has to be a difference, not a zero.
+create temporary table games_before on commit drop as
+select count(*)::int as n from games;
+
 insert into players (id, name, emoji, is_active) values
   ('cc210000-0000-4000-8000-000000000001', 'Tourney Org',  '🎪', true),
   ('cc210000-0000-4000-8000-000000000002', 'Tourney Gone', '👻', false);
@@ -438,7 +443,7 @@ select ok(
 -- ---------------------------------------------------------------------------
 select is(
   (select count(*)::int from games),
-  0,
+  (select n from games_before),
   'none of this wrote a game, so ratings, badges and fika never hear about it'
 );
 
