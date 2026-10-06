@@ -7,8 +7,14 @@
 # without a WHERE clause (21000) — see the README section "Deploying a schema
 # change".
 #
-# LOCAL ONLY. It plays a game today and adds one in 2019, then hard-deletes
-# both and rebuilds ratings and badges, so it leaves nothing behind. It refuses
+# What it checks: a shut box does not end the game; a correction with nobody
+# skipped leaves the turn alone; an edit keeps a shut box's empty board; and
+# one counted game a day — STB14 while today's game is live, STB13 once it is
+# crowned, and the same for recording, moving, restoring and undoing — with
+# the refusal naming the game that holds the day.
+#
+# LOCAL ONLY. It plays a game today and adds a few in 2019, then hard-deletes
+# them and rebuilds ratings and badges, so it leaves nothing behind. It refuses
 # to run while today already has a game, rather than disturbing it.
 #
 #   bash scripts/dev/curl-game-day.sh
@@ -41,6 +47,7 @@ refused() {
     echo "  $fn should have been refused with $want ($why), got: $out" >&2
     exit 1
   fi
+  echo "$out"
   echo "  ok  $fn refused with $want — $why" >&2
 }
 
@@ -89,9 +96,20 @@ expect "a correction with nobody skipped leaves the turn where it was" "$UP" "$B
 expect "one player up at a time" \
   "$(get "game_players?select=player_id&game_id=eq.$G&status=eq.playing" | jqv "length")" "1"
 
+echo "-- one counted game a day" >&2
+LIVE=$(refused STB14 start_game "{\"p_actor\":\"$B\",\"p_player_ids\":[\"$B\",\"$C\"]}" \
+  "another game cannot start while one is live today" | jqv "details")
+expect "the refusal names the live game" "$LIVE" "$G"
+
 call end_turn "{\"p_actor\":\"$A\",\"p_game_id\":\"$G\",\"p_typed_score\":30}" >/dev/null
 call end_turn "{\"p_actor\":\"$A\",\"p_game_id\":\"$G\",\"p_typed_score\":20}" >/dev/null
 call finish_game "{\"p_actor\":\"$A\",\"p_game_id\":\"$G\"}" >/dev/null
+
+DAY=$(refused STB13 start_game "{\"p_actor\":\"$B\",\"p_player_ids\":[\"$B\",\"$C\"]}" \
+  "today already has its game" | jqv "details")
+expect "the refusal names the day's game" "$DAY" "$G"
+refused STB13 add_manual_game "{\"p_actor\":\"$B\",\"p_played_on\":\"$TODAY\",\"p_results\":[{\"player_id\":\"$B\",\"status\":\"done\",\"score\":9}]}" \
+  "nor is a second one recorded for today" >/dev/null
 
 echo "-- an edit keeps a shut box's empty board" >&2
 M=$(call add_manual_game "{\"p_actor\":\"$A\",\"p_played_on\":\"2019-03-04\",\"p_results\":[{\"player_id\":\"$A\",\"status\":\"done\",\"score\":0,\"tiles_open\":[]},{\"player_id\":\"$B\",\"status\":\"done\",\"score\":12,\"tiles_open\":[5,7]}]}" | tr -d '"')
@@ -101,5 +119,22 @@ expect "a manual shut box keeps its empty board" \
 call edit_game "{\"p_actor\":\"$A\",\"p_game_id\":\"$M\",\"p_played_on\":\"2019-03-04\",\"p_results\":[{\"player_id\":\"$A\",\"status\":\"done\",\"score\":0,\"tiles_open\":[]},{\"player_id\":\"$B\",\"status\":\"done\",\"score\":12,\"tiles_open\":[5,7]}],\"p_note\":\"curl\"}" >/dev/null
 expect "and so does an edit" \
   "$(get "game_players?select=tiles_open&game_id=eq.$M&player_id=eq.$A" | jqv "0.tiles_open")" "[]"
+
+echo "-- corrections respect the day's game" >&2
+ONE="[{\"player_id\":\"$A\",\"status\":\"done\",\"score\":9}]"
+M2=$(call add_manual_game "{\"p_actor\":\"$A\",\"p_played_on\":\"2019-03-05\",\"p_results\":$ONE}" | tr -d '"')
+GAMES+=("$M2")
+refused STB13 edit_game "{\"p_actor\":\"$A\",\"p_game_id\":\"$M2\",\"p_played_on\":\"2019-03-04\",\"p_results\":$ONE}" \
+  "a game is not moved onto a day that has its game" >/dev/null
+call edit_game "{\"p_actor\":\"$A\",\"p_game_id\":\"$M2\",\"p_played_on\":\"2019-03-05\",\"p_results\":$ONE,\"p_note\":\"in place\"}" >/dev/null
+
+call delete_game "{\"p_actor\":\"$A\",\"p_game_id\":\"$M\",\"p_reason\":\"curl\"}" >/dev/null
+M3=$(call add_manual_game "{\"p_actor\":\"$A\",\"p_played_on\":\"2019-03-04\",\"p_results\":$ONE}" | tr -d '"')
+GAMES+=("$M3")
+refused STB13 restore_game "{\"p_actor\":\"$A\",\"p_game_id\":\"$M\"}" \
+  "a deleted game does not come back over its replacement" >/dev/null
+UNDO=$(get "audit_log?select=id&entity_id=eq.$M&order=id.desc&limit=1" | jqv "0.id")
+refused STB13 undo_game_change "{\"p_actor\":\"$A\",\"p_audit_id\":$UNDO}" \
+  "nor does undoing its delete bring it back" >/dev/null
 
 echo "All game-day RPCs behave through PostgREST." >&2

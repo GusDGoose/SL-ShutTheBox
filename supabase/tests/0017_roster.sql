@@ -14,6 +14,14 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(27);
 
+-- Today may already have its game in a dev database, and this file plays
+-- today's game itself: set any real one aside (rolled back with the rest).
+update games set deleted_at = now()
+ where played_on = stockholm_today() and status = 'finished' and deleted_at is null;
+update games set status = 'abandoned'
+ where played_on = stockholm_today() and status = 'in_progress' and deleted_at is null;
+
+
 insert into players (id, name, emoji, is_active) values
   ('ff110000-0000-4000-8000-000000000001', 'Roster Ada',  '🦊', true),
   ('ff110000-0000-4000-8000-000000000002', 'Roster Ben',  '🐙', true),
@@ -213,6 +221,12 @@ select lives_ok(
 -- ---------------------------------------------------------------------------
 -- A shut box no longer ends the game (0023), so a late joiner is still welcome
 -- ---------------------------------------------------------------------------
+-- One counted game a day (0023): the crowned one moves out of today's way.
+update games set played_on = '2019-05-04', season_id = ensure_season('2019-05-04')
+ where id = (select id from games
+              where scorekeeper_player_id = 'ff110000-0000-4000-8000-000000000001'
+                and status = 'finished');
+
 select lives_ok(
   $$select start_game('ff110000-0000-4000-8000-000000000002',
       array['ff110000-0000-4000-8000-000000000002',

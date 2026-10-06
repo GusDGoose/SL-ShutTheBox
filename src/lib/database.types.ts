@@ -2249,6 +2249,10 @@ export type Database = {
         Args: { p_game_id: string; p_results: Json }
         Returns: undefined
       }
+      assert_day_free: {
+        Args: { p_check_live?: boolean; p_day: string; p_except?: string }
+        Returns: undefined
+      }
       assert_scorekeeper: {
         Args: { p_actor: string; p_game_id: string }
         Returns: Json

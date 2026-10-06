@@ -7,6 +7,14 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(14);
 
+-- Today may already have its game in a dev database, and this file plays
+-- today's game itself: set any real one aside (rolled back with the rest).
+update games set deleted_at = now()
+ where played_on = stockholm_today() and status = 'finished' and deleted_at is null;
+update games set status = 'abandoned'
+ where played_on = stockholm_today() and status = 'in_progress' and deleted_at is null;
+
+
 -- ---------------------------------------------------------------------------
 -- The lockdown
 --

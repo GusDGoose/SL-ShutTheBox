@@ -1,11 +1,44 @@
--- Shut the Box — a shut box no longer ends the game.
+-- Shut the Box — a shut box no longer ends the game, and a day has one game.
 --
 -- On 2026-10-01 and 2026-10-05 somebody shut the box on the second turn. The
 -- house ruleset said that ended the game on the spot, so everyone after her
 -- was marked dnp — and the rest of the table, quite reasonably, played another
 -- game, which then counted as a win, a rating change and a "vann dagens" card
--- of its own. The rule agreed on 2026-10-05: everybody plays their turn, and a
--- zero simply wins (two zeros share it, as any tie does).
+-- of its own. The rules agreed on 2026-10-05:
+--
+--   * everybody plays their turn, and a zero simply wins (two zeros share it,
+--     as any tie does);
+--   * one game counts per day. A counted game is a finished one that has not
+--     been deleted; an abandoned game never counted and still does not. Team
+--     play keeps its own tables and is untouched.
+--
+-- See docs/adr/0001-one-counted-game-per-day.md for why the database enforces
+-- the second rule rather than leaving it to the app.
+--
+-- Additional error codes: STB13 that day already has its game (detail: the id
+-- of that game); STB14 a game is already being played that day (detail: the id
+-- of the live game).
+
+-- ---------------------------------------------------------------------------
+-- Pre-flight: no day may already hold two counted games
+-- ---------------------------------------------------------------------------
+
+-- The unique index below would refuse with a bare "could not create unique
+-- index". Production had three such days (2026-09-09, 2026-10-01, 2026-10-05);
+-- they are merged by a script that has to run first.
+do $preflight$
+declare
+  v_days text;
+begin
+  select string_agg(played_on::text, ', ' order by played_on) into v_days
+    from (select played_on from games
+           where status = 'finished' and deleted_at is null
+           group by played_on having count(*) > 1) d;
+  if v_days is not null then
+    raise exception 'one counted game per day: % still hold more than one — run scripts/fixes/2026-10-05-merge-split-days.sql first', v_days;
+  end if;
+end
+$preflight$;
 
 -- ---------------------------------------------------------------------------
 -- The rule itself
@@ -142,6 +175,394 @@ begin
 end
 $fn$;
 
+-- ===========================================================================
+-- One counted game per day
+-- ===========================================================================
+
+-- The same rows games_valid_idx indexed, now unique on the day. Every way a
+-- game becomes counted is a write to `games` itself — finish_game sets the
+-- status, add_manual_game inserts a finished row, an edit or an undo moves the
+-- date, a restore or an undo clears deleted_at — so the index sees all of
+-- them, including the one race the checks below cannot close: two phones
+-- crowning two games in the same second. The second commit gets 23505 naming
+-- this index.
+drop index if exists games_valid_idx;
+create unique index games_one_counted_per_day on games (played_on)
+  where status = 'finished' and deleted_at is null;
+
+-- The friendly version of the index, called before any write so the refusal
+-- says which game holds the day. `p_except` is the game being written itself.
+-- With `p_check_live`, a game still being played that day blocks too: it is the
+-- day's game in the making, and the answer is to watch it or take it over.
+create or replace function assert_day_free(
+  p_day        date,
+  p_except     uuid default null,
+  p_check_live boolean default false
+) returns void language plpgsql stable as $fn$
+declare
+  v_id uuid;
+begin
+  select id into v_id
+    from games
+   where played_on = p_day
+     and status = 'finished'
+     and deleted_at is null
+     and id is distinct from p_except
+   limit 1;
+  if v_id is not null then
+    raise exception 'that day already has its game'
+      using errcode = 'STB13', detail = v_id::text;
+  end if;
+
+  if p_check_live then
+    select id into v_id
+      from games
+     where played_on = p_day
+       and status = 'in_progress'
+       and deleted_at is null
+       and id is distinct from p_except
+     order by started_at
+     limit 1;
+    if v_id is not null then
+      raise exception 'a game is already being played that day'
+        using errcode = 'STB14', detail = v_id::text;
+    end if;
+  end if;
+end
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Starting: replaces 0010
+-- ---------------------------------------------------------------------------
+
+create or replace function start_game(p_actor uuid, p_player_ids uuid[])
+returns jsonb language plpgsql volatile as $fn$
+declare
+  v_game_id uuid;
+  v_season  uuid;
+  v_first   uuid;
+begin
+  if p_player_ids is null or cardinality(p_player_ids) = 0 then
+    raise exception 'nobody is playing' using errcode = 'STB02';
+  end if;
+  if cardinality(p_player_ids) <> (
+       select count(distinct x) from unnest(p_player_ids) x) then
+    raise exception 'a player appears twice' using errcode = 'STB02';
+  end if;
+  if exists (
+    select 1 from unnest(p_player_ids) x
+     where not exists (select 1 from players p where p.id = x and p.is_active)
+  ) then
+    raise exception 'that player is not on the active roster'
+      using errcode = 'STB02';
+  end if;
+
+  -- One live game per scorekeeper. This is the duplicate-game race from v1:
+  -- two colleagues both saw "no game yet today" and both saved one.
+  if exists (
+    select 1 from games
+     where scorekeeper_player_id = p_actor
+       and status = 'in_progress'
+       and deleted_at is null
+  ) then
+    raise exception 'you are already keeping score for a game'
+      using errcode = 'STB09';
+  end if;
+
+  -- One game a day: this one, or the one already under way. Two phones
+  -- pressing Start in the same second queue on this lock, and the second then
+  -- sees the first one's game.
+  perform pg_advisory_xact_lock(hashtextextended('stb.start.' || stockholm_today(), 0));
+  perform assert_day_free(stockholm_today(), null, true);
+
+  v_season := ensure_season(stockholm_today());
+  v_first  := p_player_ids[1];
+
+  insert into games (played_on, ruleset_id, season_id, status,
+                     scorekeeper_player_id, created_by)
+  select stockholm_today(),
+         s.ruleset_id,      -- the season's ruleset, snapshotted onto the game
+         s.id,
+         'in_progress',
+         p_actor,
+         p_actor
+    from seasons s where s.id = v_season
+  returning id into v_game_id;
+
+  insert into game_players (game_id, player_id, turn_order, status)
+  select v_game_id, x.id, x.ord,
+         case when x.ord = 1 then 'playing' else 'pending' end::game_player_status
+    from unnest(p_player_ids) with ordinality as x(id, ord);
+
+  insert into live_turns (game_id, player_id) values (v_game_id, v_first);
+
+  insert into audit_log (actor_player_id, action, entity, entity_id, after)
+  values (p_actor, 'game.start', 'game', v_game_id,
+          game_snapshot(v_game_id));
+
+  return live_game_snapshot(v_game_id);
+end
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Crowning: replaces 0012
+-- ---------------------------------------------------------------------------
+
+create or replace function finish_game(p_actor uuid, p_game_id uuid)
+returns jsonb language plpgsql volatile as $fn$
+declare
+  v_game   games;
+  v_done   integer;
+  v_left   integer;
+  v_before jsonb;
+  v_new    jsonb;
+begin
+  select * into v_game from games where id = p_game_id for update;
+  if not found or v_game.deleted_at is not null then
+    raise exception 'no such game' using errcode = 'STB03';
+  end if;
+  if v_game.status <> 'in_progress' then
+    raise exception 'this game is not in progress' using errcode = 'STB03';
+  end if;
+
+  select count(*) filter (where status = 'done'),
+         count(*) filter (where status in ('pending', 'playing'))
+    into v_done, v_left
+    from game_players where game_id = p_game_id;
+
+  if v_left > 0 then
+    raise exception 'somebody still has a turn to play' using errcode = 'STB03';
+  end if;
+  if v_done = 0 then
+    raise exception 'nobody has played yet' using errcode = 'STB05';
+  end if;
+
+  -- Only reachable when two games were live on one day — a race at the start,
+  -- or a game begun before 0023. The one crowned first is the day's game; this
+  -- one is left in progress, untouched, for its scorekeeper to abandon.
+  perform assert_day_free(v_game.played_on, p_game_id);
+
+  -- What the players in this game already had, so the difference afterwards is
+  -- what they just earned.
+  select coalesce(jsonb_agg(distinct pa.player_id::text || '|' || pa.achievement_key), '[]'::jsonb)
+    into v_before
+    from player_achievements pa
+   where pa.player_id in (
+     select player_id from game_players where game_id = p_game_id
+   );
+
+  update games
+     set status      = 'finished',
+         finished_at = now()
+   where id = p_game_id;
+
+  delete from live_turns where game_id = p_game_id;
+
+  -- Both rebuild from the game history, so they have to run after the game
+  -- counts as finished.
+  perform recompute_ratings();
+  perform evaluate_achievements();
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'player_id', pa.player_id,
+           'key', pa.achievement_key,
+           'name', a.name,
+           'emoji', a.emoji,
+           'description', a.description)), '[]'::jsonb)
+    into v_new
+    from player_achievements pa
+    join achievements a on a.key = pa.achievement_key
+   where pa.player_id in (
+     select player_id from game_players where game_id = p_game_id
+   )
+     and not (v_before ? (pa.player_id::text || '|' || pa.achievement_key));
+
+  insert into audit_log (actor_player_id, action, entity, entity_id, after)
+  values (p_actor, 'game.finish', 'game', p_game_id, game_snapshot(p_game_id));
+
+  return jsonb_build_object('game_id', p_game_id, 'new_achievements', v_new);
+end
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Correcting the record: replaces 0013
+-- ---------------------------------------------------------------------------
+
+create or replace function edit_game(
+  p_actor    uuid,
+  p_game_id  uuid,
+  p_played_on date,
+  p_results  jsonb,
+  p_note     text default null
+) returns void language plpgsql volatile as $fn$
+declare
+  v_game   games;
+  v_before jsonb;
+begin
+  select * into v_game from games where id = p_game_id for update;
+  if not found then
+    raise exception 'no such game' using errcode = 'STB03';
+  end if;
+  if v_game.status <> 'finished' then
+    raise exception 'only a finished game can be edited' using errcode = 'STB03';
+  end if;
+  if p_played_on > stockholm_today() then
+    raise exception 'that date has not happened yet' using errcode = 'STB06';
+  end if;
+  -- Correcting the scores on the game's own day is never blocked; moving a
+  -- counted game onto a day that already has one is.
+  if p_played_on is distinct from v_game.played_on and v_game.deleted_at is null then
+    perform assert_day_free(p_played_on, p_game_id);
+  end if;
+
+  v_before := game_snapshot(p_game_id);
+
+  -- The season follows the date, so moving a game into another quarter moves
+  -- it in the standings too. The RULESET does not move: the game was played
+  -- under the rules it was played under.
+  update games
+     set played_on = p_played_on,
+         season_id = ensure_season(p_played_on)
+   where id = p_game_id;
+
+  perform apply_game_results(p_game_id, p_results);
+  perform resettle_history();
+
+  insert into audit_log (actor_player_id, action, entity, entity_id,
+                         before, after, note)
+  values (p_actor, 'game.edit', 'game', p_game_id,
+          v_before, game_snapshot(p_game_id), p_note);
+end
+$fn$;
+
+create or replace function restore_game(p_actor uuid, p_game_id uuid)
+returns void language plpgsql volatile as $fn$
+declare
+  v_game games;
+begin
+  select * into v_game from games where id = p_game_id for update;
+  if not found or v_game.deleted_at is null then
+    return;   -- not deleted; nothing to restore
+  end if;
+  -- A deleted game whose day has since been played again stays deleted:
+  -- bringing it back would make two games count.
+  if v_game.status = 'finished' then
+    perform assert_day_free(v_game.played_on, p_game_id);
+  end if;
+
+  update games set deleted_at = null where id = p_game_id;
+  perform resettle_history();
+
+  insert into audit_log (actor_player_id, action, entity, entity_id, after)
+  values (p_actor, 'game.restore', 'game', p_game_id,
+          game_snapshot(p_game_id));
+end
+$fn$;
+
+-- Reverses one recorded change, and only if nothing has happened to the game
+-- since. Undoing out of order would silently discard whatever came after it.
+create or replace function undo_game_change(p_actor uuid, p_audit_id bigint)
+returns void language plpgsql volatile as $fn$
+declare
+  v_entry  audit_log;
+  v_latest bigint;
+  v_game   games;
+  v_day    date;
+begin
+  select * into v_entry from audit_log where id = p_audit_id;
+  if not found or v_entry.entity <> 'game' or v_entry.entity_id is null then
+    raise exception 'that change cannot be undone' using errcode = 'STB07';
+  end if;
+
+  select max(id) into v_latest
+    from audit_log
+   where entity = 'game' and entity_id = v_entry.entity_id
+     and action in ('game.edit', 'game.delete', 'game.restore', 'game.undo');
+  if v_latest is distinct from p_audit_id then
+    raise exception 'something else has changed this game since'
+      using errcode = 'STB07';
+  end if;
+
+  select * into v_game from games where id = v_entry.entity_id for update;
+
+  if v_entry.action = 'game.edit' then
+    if v_entry.before is null then
+      raise exception 'that change has nothing to go back to'
+        using errcode = 'STB07';
+    end if;
+    v_day := (v_entry.before->'game'->>'played_on')::date;
+    -- Going back to the old day only works if nobody has played it since.
+    if v_day is distinct from v_game.played_on
+       and v_game.status = 'finished' and v_game.deleted_at is null then
+      perform assert_day_free(v_day, v_game.id);
+    end if;
+    update games
+       set played_on = v_day,
+           season_id = ensure_season(v_day)
+     where id = v_entry.entity_id;
+    perform apply_game_results(v_entry.entity_id, v_entry.before->'players');
+
+  elsif v_entry.action = 'game.delete' then
+    -- Undoing a delete is a restore, under the same condition.
+    if v_game.status = 'finished' then
+      perform assert_day_free(v_game.played_on, v_game.id);
+    end if;
+    update games set deleted_at = null where id = v_entry.entity_id;
+
+  elsif v_entry.action = 'game.restore' then
+    update games set deleted_at = now() where id = v_entry.entity_id;
+
+  else
+    raise exception 'that kind of change cannot be undone'
+      using errcode = 'STB07';
+  end if;
+
+  perform resettle_history();
+
+  insert into audit_log (actor_player_id, action, entity, entity_id, after, note)
+  values (p_actor, 'game.undo', 'game', v_entry.entity_id,
+          game_snapshot(v_entry.entity_id),
+          format('undid %s from %s', v_entry.action,
+                 to_char(v_entry.at, 'YYYY-MM-DD HH24:MI')));
+end
+$fn$;
+
+-- The forgotten Friday — as long as that Friday does not already have its
+-- game. Today counts as taken while a game is still being played.
+create or replace function add_manual_game(
+  p_actor     uuid,
+  p_played_on date,
+  p_results   jsonb,
+  p_note      text default null
+) returns uuid language plpgsql volatile as $fn$
+declare
+  v_game_id uuid;
+  v_season  uuid;
+begin
+  if p_played_on > stockholm_today() then
+    raise exception 'that date has not happened yet' using errcode = 'STB06';
+  end if;
+  perform assert_day_free(p_played_on, null, true);
+
+  v_season := ensure_season(p_played_on);
+
+  insert into games (played_on, ruleset_id, season_id, status,
+                     created_by, started_at, finished_at)
+  select p_played_on, s.ruleset_id, s.id, 'finished', p_actor, now(), now()
+    from seasons s where s.id = v_season
+  returning id into v_game_id;
+
+  perform apply_game_results(v_game_id, p_results);
+  perform resettle_history();
+
+  insert into audit_log (actor_player_id, action, entity, entity_id, after, note)
+  values (p_actor, 'game.manual', 'game', v_game_id,
+          game_snapshot(v_game_id), p_note);
+
+  return v_game_id;
+end
+$fn$;
+
 -- ---------------------------------------------------------------------------
 -- Privileges (create or replace keeps them, but say so where it is read)
 -- ---------------------------------------------------------------------------
@@ -152,7 +573,14 @@ declare
 begin
   foreach v_fn in array array[
     'set_turn_result(uuid, uuid, uuid, smallint[], integer, integer)',
-    'apply_game_results(uuid, jsonb)'
+    'apply_game_results(uuid, jsonb)',
+    'assert_day_free(date, uuid, boolean)',
+    'start_game(uuid, uuid[])',
+    'finish_game(uuid, uuid)',
+    'edit_game(uuid, uuid, date, jsonb, text)',
+    'restore_game(uuid, uuid)',
+    'undo_game_change(uuid, bigint)',
+    'add_manual_game(uuid, date, jsonb, text)'
   ]
   loop
     execute format('revoke execute on function %s from public, anon, authenticated', v_fn);

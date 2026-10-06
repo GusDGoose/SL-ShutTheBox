@@ -5,7 +5,15 @@
 -- these tests are read far more often than they are written.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(46);
+select plan(52);
+
+-- Today may already have its game in a dev database, and this file plays
+-- today's game itself: set any real one aside (rolled back with the rest).
+update games set deleted_at = now()
+ where played_on = stockholm_today() and status = 'finished' and deleted_at is null;
+update games set status = 'abandoned'
+ where played_on = stockholm_today() and status = 'in_progress' and deleted_at is null;
+
 
 -- ---------------------------------------------------------------------------
 -- Fixture: our own players, so nothing here depends on seed.sql or on whatever
@@ -98,6 +106,16 @@ select throws_ok(
       array['a1100000-0000-4000-8000-000000000002']::uuid[])$$,
   'STB09', null,
   'one scorekeeper cannot run two games at once'
+);
+
+-- One counted game a day (0023): while today's is being played, nobody else
+-- starts another — they watch it, or take it over.
+select throws_ok(
+  $$select start_game('a1100000-0000-4000-8000-000000000002',
+      array['a1100000-0000-4000-8000-000000000002',
+            'a1100000-0000-4000-8000-000000000003']::uuid[])$$,
+  'STB14', null,
+  'another game cannot start while one is live today'
 );
 
 -- ---------------------------------------------------------------------------
@@ -246,6 +264,18 @@ select throws_ok(
   'STB03', null,
   'a finished game cannot be finished again'
 );
+select throws_ok(
+  $$select start_game('a1100000-0000-4000-8000-000000000002',
+      array['a1100000-0000-4000-8000-000000000002',
+            'a1100000-0000-4000-8000-000000000003']::uuid[])$$,
+  'STB13', null,
+  'and once it is crowned, today already has its game'
+);
+
+-- The rest of this file plays more games, so the crowned one moves out of
+-- today's way.
+update games set played_on = '2019-05-01', season_id = ensure_season('2019-05-01')
+ where id = (select id from g1done);
 
 -- ---------------------------------------------------------------------------
 -- A second game, with the box shut on the FIRST of three turns
@@ -322,6 +352,49 @@ select ok(
   not exists (select 1 from audit_log
                where entity_id = (select id from g2) and action = 'game.finish'),
   'and wrote no audit row for a finish that did not happen'
+);
+
+-- ---------------------------------------------------------------------------
+-- Two games live at once on the same day: the second to finish loses
+--
+-- start_game refuses a second live game today, so this one is put on the
+-- table directly — the shape a race between two phones leaves behind.
+-- ---------------------------------------------------------------------------
+insert into games (id, played_on, ruleset_id, season_id, status,
+                   scorekeeper_player_id, created_by)
+values ('a1100000-0000-4000-8000-0000000000f4', stockholm_today(),
+        default_ruleset_id(), ensure_season(stockholm_today()), 'in_progress',
+        'a1100000-0000-4000-8000-000000000003', 'a1100000-0000-4000-8000-000000000003');
+insert into game_players (game_id, player_id, turn_order, status, score) values
+  ('a1100000-0000-4000-8000-0000000000f4', 'a1100000-0000-4000-8000-000000000003', 1, 'done', 5);
+
+select lives_ok(
+  $$select finish_game('a1100000-0000-4000-8000-000000000003',
+      'a1100000-0000-4000-8000-0000000000f4')$$,
+  'one of two games live today is crowned'
+);
+
+do $out$
+begin
+  perform end_turn('a1100000-0000-4000-8000-000000000002', (select id from g2), 30);  -- Ada
+  perform end_turn('a1100000-0000-4000-8000-000000000002', (select id from g2), 20);  -- Cleo
+end
+$out$;
+
+select throws_ok(
+  $$select finish_game('a1100000-0000-4000-8000-000000000002',
+      (select id from g2))$$,
+  'STB13', null,
+  'the other loses the race: today already has its game'
+);
+select is(
+  (select status::text from games where id = (select id from g2)),
+  'in_progress',
+  'and is left exactly as it was'
+);
+select ok(
+  exists (select 1 from live_turns where game_id = (select id from g2)),
+  'with its live board intact, for whoever is holding it to decide'
 );
 
 -- ---------------------------------------------------------------------------
