@@ -15,6 +15,9 @@
 -- See docs/adr/0001-one-counted-game-per-day.md for why the database enforces
 -- the second rule rather than leaving it to the app.
 --
+-- Also here, because it ships with the same release: player_recent_form, each
+-- player's last five games, for the reworked Players overview.
+--
 -- Additional error codes: STB13 that day already has its game (detail: the id
 -- of that game); STB14 a game is already being played that day (detail: the id
 -- of the live game).
