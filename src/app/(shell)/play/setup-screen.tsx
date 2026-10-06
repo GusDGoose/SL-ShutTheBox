@@ -22,11 +22,9 @@ import { startGame } from "@/app/(focus)/game/actions";
 export function SetupScreen({
   rules,
   players,
-  gamesToday,
 }: {
   rules: Ruleset;
   players: Player[];
-  gamesToday: number;
 }) {
   const [order, setOrder] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -59,8 +57,8 @@ export function SetupScreen({
       const res = await startGame(order);
       if (!res.ok) {
         setError(res.error);
-        // Most likely someone else just started one, so show them what is
-        // actually going on rather than leaving a stale screen.
+        // Most likely someone else just started today's game (STB14) or it
+        // has already been crowned (STB13): the refreshed page shows which.
         router.refresh();
         return;
       }
@@ -81,13 +79,6 @@ export function SetupScreen({
           house rules
         </Link>
       </p>
-
-      {gamesToday > 0 && (
-        <p className="rounded-[var(--radius-card)] border border-brass/40 bg-brass/10 px-4 py-3 text-sm">
-          ⚠️ Today already has {gamesToday === 1 ? "a game" : `${gamesToday} games`}{" "}
-          — play another if you like; every game still counts toward the day.
-        </p>
-      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="eyebrow">Who&apos;s playing? (tap in turn order)</h2>

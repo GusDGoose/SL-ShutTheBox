@@ -141,15 +141,7 @@ export default async function Home() {
               </Link>
             );
           })}
-
-          {!liveSnapshot && (
-            <Link
-              href="/play"
-              className="self-start text-sm font-semibold text-ink-muted hover:text-ink"
-            >
-              + Start another game
-            </Link>
-          )}
+          {/* No "start another game": one game counts a day (0023). */}
         </>
       )}
 

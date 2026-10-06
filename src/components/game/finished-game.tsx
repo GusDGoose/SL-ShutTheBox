@@ -177,12 +177,10 @@ export async function FinishedGame({
         })}
       </ul>
 
-      {/* v1's result page had no way out of it at all. */}
+      {/* v1's result page had no way out of it at all. There is no "play
+          again": one game counts a day (0023), and this was it. */}
       <div className="flex flex-wrap gap-2">
-        <Link href="/play" className={buttonClass("primary")}>
-          Play again 🎲
-        </Link>
-        <Link href="/" className={buttonClass("secondary")}>
+        <Link href="/" className={buttonClass("primary")}>
           Today
         </Link>
         <Link href="/stats" className={buttonClass("ghost")}>

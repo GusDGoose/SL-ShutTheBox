@@ -40,6 +40,12 @@ export type AchievementRow = {
   repeatable: boolean;
 };
 
+/**
+ * A day that already has its game (one counted game a day, 0023): crowned, or
+ * — today only — still being played.
+ */
+export type TakenDay = { gameId: string; live: boolean };
+
 export type Game = {
   id: string;
   played_on: string; // YYYY-MM-DD

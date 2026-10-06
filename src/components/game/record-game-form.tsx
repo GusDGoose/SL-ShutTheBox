@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Board } from "@/components/board/board";
 import { MiniBoard } from "@/components/board/mini-board";
@@ -15,7 +16,8 @@ import {
   tilesOf,
   type Ruleset,
 } from "@/lib/rules";
-import type { Player } from "@/lib/types";
+import type { Player, TakenDay } from "@/lib/types";
+import { existingGameOf } from "@/lib/action-result";
 import {
   addManualGame,
   type ResultInput,
@@ -63,11 +65,14 @@ export function RecordGameForm({
   seasons,
   defaultRules,
   today,
+  taken = {},
 }: {
   roster: Player[];
   seasons: SeasonRules[];
   defaultRules: Ruleset;
   today: string;
+  /** Recent days that already have their game, by date (one game a day, 0023). */
+  taken?: Record<string, TakenDay>;
 }) {
   const [date, setDate] = useState(today);
   const [order, setOrder] = useState<string[]>([]);
@@ -75,6 +80,9 @@ export function RecordGameForm({
   const [note, setNote] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
+  // The day's game, when the server refused for a day this page did not know
+  // was taken — older than the list it was given, or played a moment ago.
+  const [serverTaken, setServerTaken] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -153,23 +161,27 @@ export function RecordGameForm({
     };
   });
 
+  const takenNow = taken[date];
   const firstProblem = rows.find((r) => r.state === "invalid");
   const somebodyPlayed = rows.some(
     (r) => r.state === "ok" && r.result.status === "done",
   );
   const canSubmit =
     !pending &&
+    !takenNow &&
     order.length > 0 &&
     rows.every((r) => r.state === "ok") &&
     somebodyPlayed;
 
   function submit() {
     setServerError(null);
+    setServerTaken(null);
     const results = rows.flatMap((r) => (r.state === "ok" ? [r.result] : []));
     startTransition(async () => {
       const res = await addManualGame(date, results, note.trim() || undefined);
       if (!res.ok) {
         setServerError(res.error);
+        setServerTaken(existingGameOf(res));
         return;
       }
       router.push(`/game/${res.gameId}`);
@@ -235,13 +247,45 @@ export function RecordGameForm({
           type="date"
           value={date}
           max={today}
-          onChange={(e) => setDate(e.target.value)}
+          onChange={(e) => {
+            setDate(e.target.value);
+            setServerError(null);
+            setServerTaken(null);
+          }}
           className="w-48 rounded-[var(--radius-control)] border border-line bg-surface px-3 py-2"
         />
         <p className="text-xs text-ink-muted">
           {tilesOf(rules)} tiles · {rules.win === "lowest" ? "lowest" : "highest"}{" "}
           wins on that day.
         </p>
+        {/* One game counts a day, so a day that has its game is corrected, not
+            added to. */}
+        {takenNow && (
+          <p
+            role="status"
+            className="rounded-[var(--radius-card)] border border-brass/40 bg-brass/10 px-4 py-3 text-sm"
+          >
+            {takenNow.live ? (
+              <>
+                Today&apos;s game is being played right now.{" "}
+                <Link href={`/game/${takenNow.gameId}`} className="font-semibold underline">
+                  Watch it
+                </Link>
+              </>
+            ) : (
+              <>
+                That day already has its game.{" "}
+                <Link
+                  href={`/game/${takenNow.gameId}/edit`}
+                  className="font-semibold underline"
+                >
+                  Edit it
+                </Link>{" "}
+                to correct it.
+              </>
+            )}
+          </p>
+        )}
       </section>
 
       <section className="flex flex-col gap-3">
@@ -374,6 +418,14 @@ export function RecordGameForm({
       {serverError && (
         <p role="alert" className="text-sm font-semibold text-danger">
           {serverError}
+          {serverTaken && (
+            <>
+              {" "}
+              <Link href={`/game/${serverTaken}`} className="underline">
+                Open that day&apos;s game →
+              </Link>
+            </>
+          )}
         </p>
       )}
 

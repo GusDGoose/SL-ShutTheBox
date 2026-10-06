@@ -1,6 +1,7 @@
 import { requireIdentityPage } from "@/lib/auth";
 import { stockholmToday } from "@/lib/dates";
 import { parseRuleset } from "@/lib/rules";
+import { getTakenDays } from "@/lib/queries/day";
 import { getRoster, getSeasons } from "@/lib/queries/stats";
 import { supabaseAdmin } from "@/lib/supabase";
 import { RecordGameForm } from "@/components/game/record-game-form";
@@ -18,10 +19,13 @@ export const metadata = { title: "Record a game · Shut the Box" };
  */
 export default async function RecordGamePage() {
   await requireIdentityPage("/record");
+  const today = stockholmToday();
 
-  const [roster, seasons, fallback] = await Promise.all([
+  const [roster, seasons, taken, fallback] = await Promise.all([
     getRoster(),
     getSeasons(),
+    // One counted game a day (0023): the form refuses a taken day up front.
+    getTakenDays(today),
     // What ensure_season() assigns to a quarter nobody has planned — the
     // form needs it to draw the right board for a date outside every season.
     supabaseAdmin().from("rulesets").select("rules").eq("slug", "vanilla-12").single(),
@@ -38,7 +42,8 @@ export default async function RecordGamePage() {
           rules: s.rules,
         }))}
         defaultRules={parseRuleset(fallback.data.rules)}
-        today={stockholmToday()}
+        today={today}
+        taken={taken}
       />
     </main>
   );

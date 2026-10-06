@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { readScore, signIn } from "./helpers";
+import { freeToday, readScore, signIn } from "./helpers";
+
+// One counted game a day (0023), and this test plays today's — once per
+// Playwright project, so the second run would find the first one's crown.
+test.beforeEach(async ({ request }) => {
+  await freeToday(request);
+});
 
 /**
  * The path the office walks every lunchtime: PIN, say who you are, pick the
@@ -58,4 +64,12 @@ test("a whole game, from the PIN to the crown", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: /crown the winner/i }),
   ).toBeVisible();
+
+  // ---- and that was today's game ----------------------------------------
+  // One game counts a day: Play no longer offers a second one.
+  await page.goto("/play");
+  await expect(
+    page.getByRole("heading", { name: /today's game is done/i }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /roll the dice/i })).toHaveCount(0);
 });

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Player } from "@/lib/types";
 import type { Ruleset } from "@/lib/rules";
@@ -211,6 +211,83 @@ describe("RecordGameForm", () => {
     await user.click(screen.getByRole("button", { name: /record the game/i }));
     await waitFor(() => expect(addManualGame).toHaveBeenCalledTimes(1));
     expect(vi.mocked(addManualGame).mock.calls[0]![2]).toBe("the app was down");
+  });
+
+  // One counted game a day (0023): the page knows which recent days are taken.
+  it("refuses a day that already has its game and links to editing it", async () => {
+    const user = userEvent.setup();
+    render(
+      <RecordGameForm
+        roster={[ALICE, BOB]}
+        seasons={[]}
+        defaultRules={VANILLA}
+        today={TODAY}
+        taken={{ [TODAY]: { gameId: "g9", live: false } }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Alice/ }));
+    await user.type(screen.getByLabelText("Score for Alice"), "4");
+
+    expect(screen.getByRole("link", { name: /edit it/i })).toHaveAttribute(
+      "href",
+      "/game/g9/edit",
+    );
+    expect(screen.getByRole("button", { name: /record the game/i })).toBeDisabled();
+  });
+
+  it("lets the date change to a free day", async () => {
+    const user = userEvent.setup();
+    render(
+      <RecordGameForm
+        roster={[ALICE, BOB]}
+        seasons={[]}
+        defaultRules={VANILLA}
+        today={TODAY}
+        taken={{ [TODAY]: { gameId: "g9", live: false } }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /Alice/ }));
+    await user.type(screen.getByLabelText("Score for Alice"), "4");
+    fireEvent.change(screen.getByLabelText("Played on"), {
+      target: { value: "2026-09-07" },
+    });
+
+    expect(screen.queryByRole("link", { name: /edit it/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /record the game/i })).toBeEnabled();
+  });
+
+  it("sends people to today's game while it is being played", () => {
+    render(
+      <RecordGameForm
+        roster={[ALICE, BOB]}
+        seasons={[]}
+        defaultRules={VANILLA}
+        today={TODAY}
+        taken={{ [TODAY]: { gameId: "g8", live: true } }}
+      />,
+    );
+    expect(screen.getByRole("link", { name: /watch it/i })).toHaveAttribute(
+      "href",
+      "/game/g8",
+    );
+  });
+
+  it("links to the day's game when the server is the one that knows", async () => {
+    vi.mocked(addManualGame).mockResolvedValueOnce({
+      ok: false,
+      error: "That day already has its game — edit it instead.",
+      existingGameId: "g7",
+    } as never);
+    const user = userEvent.setup();
+    renderForm();
+    await user.click(screen.getByRole("button", { name: /Alice/ }));
+    await user.type(screen.getByLabelText("Score for Alice"), "4");
+    await user.click(screen.getByRole("button", { name: /record the game/i }));
+
+    expect(
+      await screen.findByRole("link", { name: /open that day's game/i }),
+    ).toHaveAttribute("href", "/game/g7");
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it("shows the server's refusal and stays on the page", async () => {

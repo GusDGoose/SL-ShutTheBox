@@ -1,7 +1,79 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 /** The local dev PIN from .env.local; deterministic, not a secret. */
 export const PIN = process.env.TEAM_PIN ?? "1234";
+
+/**
+ * The local Supabase the app under test talks to, and its service key —
+ * refusing anything that is not on this machine. The helpers below write to
+ * the database directly, and that must never reach production by accident.
+ */
+function localSupabase(): { url: string; key: string } {
+  try {
+    process.loadEnvFile(".env.local");
+  } catch {
+    // CI puts the same variables in the environment instead.
+  }
+  const url = process.env.SUPABASE_URL ?? "";
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // An unparseable URL is refused below like any other.
+  }
+  if (!["127.0.0.1", "localhost"].includes(host) || !key) {
+    throw new Error(
+      "e2e only writes to a local Supabase (127.0.0.1 or localhost) with a service key",
+    );
+  }
+  return { url, key };
+}
+
+/**
+ * One counted game a day (0023): a test that plays today's game needs today
+ * free. A crowned game is soft-deleted and a live one abandoned, through the
+ * same RPCs the app uses — so it is all in the audit trail, and recoverable.
+ */
+export async function freeToday(request: APIRequestContext) {
+  const { url, key } = localSupabase();
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+  };
+  async function call(path: string, data?: object): Promise<unknown> {
+    const res = data
+      ? await request.post(`${url}/rest/v1/${path}`, { headers, data })
+      : await request.get(`${url}/rest/v1/${path}`, { headers });
+    const body = await res.text();
+    expect(res.ok(), `${path}: ${body}`).toBe(true);
+    return body ? JSON.parse(body) : null;
+  }
+
+  const today = (await call("rpc/stockholm_today", {})) as string;
+  const [actor] = (await call("players?select=id&is_active=eq.true&limit=1")) as {
+    id: string;
+  }[];
+  const games = (await call(
+    `games?select=id,status&played_on=eq.${today}&deleted_at=is.null&status=neq.abandoned`,
+  )) as { id: string; status: string }[];
+  for (const game of games) {
+    if (game.status === "finished") {
+      await call("rpc/delete_game", {
+        p_actor: actor!.id,
+        p_game_id: game.id,
+        p_reason: "e2e: freeing today for a test game",
+      });
+    } else {
+      await call("rpc/abandon_game", {
+        p_actor: actor!.id,
+        p_game_id: game.id,
+        p_note: "e2e: freeing today for a test game",
+      });
+    }
+  }
+}
 
 /**
  * Through the PIN gate and the "who are you?" gate, which every route sits
