@@ -2,9 +2,11 @@ import Link from "next/link";
 import { getIdentity } from "@/lib/auth";
 
 /**
- * Who this device is signed in as. Rendered on the server and wrapped in a
- * Suspense boundary by the shell, so a navigation never waits on the roster
- * query just to draw the header.
+ * Who this device is signed in as — and the way to your own profile, where
+ * your song and badges are. Switching player is on that profile and in More.
+ *
+ * Rendered on the server and wrapped in a Suspense boundary by the shell, so a
+ * navigation never waits on the roster query just to draw the header.
  */
 export async function IdentityChip() {
   const player = await getIdentity();
@@ -22,9 +24,9 @@ export async function IdentityChip() {
 
   return (
     <Link
-      href="/whoami"
+      href={`/players/${player.id}`}
       className="flex min-h-11 min-w-0 items-center gap-2 rounded-full px-3 text-sm text-ivory/80 transition-colors hover:text-ivory"
-      title={`You are ${player.name} on this device`}
+      title={`You are ${player.name} on this device — your profile`}
     >
       <span aria-hidden className="shrink-0 text-lg">
         {player.emoji}
@@ -32,7 +34,6 @@ export async function IdentityChip() {
       {/* Truncated, not wrapped: the header is one line, and a name long
           enough to wrap is long enough to have pushed the page sideways. */}
       <span className="truncate font-semibold">{player.name}</span>
-      <span className="hidden text-ivory/60 sm:inline">· switch</span>
     </Link>
   );
 }

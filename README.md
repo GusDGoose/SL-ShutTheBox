@@ -46,11 +46,12 @@ TypeScript. `0007_views.sql` is where the stats live.
 | | |
 |---|---|
 | `/` | today's game — live card, results, the way into the history |
-| `/play` → `/game/[id]` | setup, then the board: taps, turns, review, crowning |
+| `/play` → `/game/[id]` | setup, then the board: taps, turns, review, crowning — or, once today's game is played, that it is done |
 | `/record` | a game played without the app, entered after the fact |
 | `/stats`, `/stats/all-time`, `/stats/season/[id]` | standings, ratings, distribution, form, head-to-head, hall of fame |
 | `/history/[month]` | every game of a month, day by day, with the photo scrapbook |
-| `/players`, `/players/[id]` | the roster and each player's profile, badges and song clip |
+| `/players` | everyone at a glance: song, badges, rating, lowest score, form — read-only |
+| `/players/[id]` | a profile; your own (the name in the header) is where you set your name, emoji and song |
 | `/rules` | the house rules, rendered from the season's ruleset |
 | `/fika` | who buys this week, why it is them, and everyone before |
 | `/more` | the rest of the app, plus board theme, sound and who this device is |
@@ -59,8 +60,10 @@ TypeScript. `0007_views.sql` is where the stats live.
 Four tabs cover the everyday routes — Today, Play, Stats, Players — and
 **More** collects the rest. Every page inside the shell lights exactly one
 tab; `e2e/navigation.spec.ts` fails if one ever lights none, which is the
-state the app drifted into once already. `/settings` permanently redirects to
-`/more`. The board and the gates render in the `(focus)` group, which has no
+state the app drifted into once already. The name in the header opens your
+own profile; switching player is on that profile and in More. `/settings`
+*temporarily* redirects to `/more` (a 308 would be cached in every browser,
+and the layout may move again). The board and the gates render in the `(focus)` group, which has no
 tab rail at all, so nothing competes with the game.
 
 ## Team play

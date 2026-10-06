@@ -73,11 +73,13 @@ test.describe("nothing scrolls sideways", () => {
     // min-width:auto, and a long enough name pushed the whole document past
     // the viewport on every route at once.
     await page.goto("/");
-    await page.evaluate(() => {
-      const chip = document.querySelector(
-        'header a[href="/whoami"] span.font-semibold',
-      );
-      if (chip) chip.textContent = "Marie-Louise Bergström-Håkansson";
+    // The chip links to your own profile. Asserted rather than assumed: this
+    // used to look the chip up and quietly do nothing when it was not there,
+    // so the test passed whether or not it tested anything.
+    const chip = page.locator('header a[href^="/players/"] span.font-semibold');
+    await expect(chip).toHaveCount(1);
+    await chip.evaluate((el) => {
+      el.textContent = "Marie-Louise Bergström-Håkansson";
     });
     await expectNoHorizontalScroll(page);
   });

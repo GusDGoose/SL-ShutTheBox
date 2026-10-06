@@ -43,6 +43,24 @@ for (const path of ["/", "/play", "/stats", "/players", "/more", "/fika"]) {
   });
 }
 
+// The profiles: someone else's (read-only), and your own, which carries the
+// forms for your name, emoji and song.
+test("a player's profile has no serious accessibility violations", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/players");
+  await page.getByRole("main").getByRole("link").first().click();
+  await page.waitForURL(/\/players\/[0-9a-f-]{36}$/);
+  expect(await violations(page)).toEqual([]);
+});
+
+test("your own profile has no serious accessibility violations", async ({ page }) => {
+  await signIn(page);
+  await page.locator('header a[href^="/players/"]').click();
+  await page.waitForURL(/\/players\/[0-9a-f-]{36}$/);
+  await expect(page.getByRole("heading", { name: /your song/i })).toBeVisible();
+  expect(await violations(page)).toEqual([]);
+});
+
 /**
  * Team play is the one part of the app strangers use, on their own phones,
  * with nobody to ask. It gets the same floor as everything else.
