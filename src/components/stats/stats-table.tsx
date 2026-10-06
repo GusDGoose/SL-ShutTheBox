@@ -10,6 +10,13 @@ import type { CSSProperties, ReactNode } from "react";
  * `stickyFirstColumn` pins the player name while the numbers scroll under it;
  * without it you scroll right to read a win count and can no longer see whose
  * it is.
+ *
+ * The scroll box is `relative` on purpose. Screen-reader text (`sr-only`) is
+ * position:absolute, and an absolute element is clipped only by an overflow
+ * box that is also its containing block — without `relative` it escaped to the
+ * page, past the right edge, and on a phone Chrome widened the whole layout to
+ * fit it: the page panned sideways and the tab rail grew past the screen
+ * (found on /stats/all-time's head-to-head, 2026-10-06).
  */
 export function StatsTable({
   headers,
@@ -38,7 +45,7 @@ export function StatsTable({
       tabIndex={0}
       role="region"
       aria-label={caption ?? "Statistics table"}
-      className="overflow-x-auto overscroll-x-contain rounded-[var(--radius-card)] border border-line bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass"
+      className="relative overflow-x-auto overscroll-x-contain rounded-[var(--radius-card)] border border-line bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brass"
     >
       <table className="w-full min-w-max border-collapse text-sm">
         {caption && <caption className="sr-only">{caption}</caption>}
