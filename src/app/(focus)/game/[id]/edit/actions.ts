@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { withSession } from "@/lib/auth";
-import { describeDbError } from "@/lib/db-errors";
+import { refusal } from "@/lib/db-errors";
 import { checkUpload, photoObjectPath } from "@/lib/storage-paths";
 import { supabaseAdmin } from "@/lib/supabase";
 import { rpc } from "@/lib/db-rows";
@@ -55,7 +55,7 @@ export async function editGame(
       p_results: toRows(results),
       p_note: note?.trim() || null,
     });
-    if (error) return { ok: false, error: describeDbError(error) };
+    if (error) return refusal(error);
     touched(gameId);
     return { ok: true };
   });
@@ -71,7 +71,7 @@ export async function deleteGame(
       p_game_id: gameId,
       p_reason: reason?.trim() || null,
     });
-    if (error) return { ok: false, error: describeDbError(error) };
+    if (error) return refusal(error);
     touched(gameId);
     return { ok: true };
   });
@@ -83,7 +83,7 @@ export async function restoreGame(gameId: string): Promise<ActionResult> {
       p_actor: actorId,
       p_game_id: gameId,
     });
-    if (error) return { ok: false, error: describeDbError(error) };
+    if (error) return refusal(error);
     touched(gameId);
     return { ok: true };
   });
@@ -116,7 +116,7 @@ export async function undoLastChange(gameId: string): Promise<ActionResult> {
       p_actor: actorId,
       p_audit_id: auditId,
     });
-    if (error) return { ok: false, error: describeDbError(error) };
+    if (error) return refusal(error);
     touched(gameId);
     return { ok: true };
   });
@@ -132,7 +132,7 @@ export async function undoChange(
       p_actor: actorId,
       p_audit_id: auditId,
     });
-    if (error) return { ok: false, error: describeDbError(error) };
+    if (error) return refusal(error);
     touched(gameId);
     return { ok: true };
   });
@@ -150,7 +150,7 @@ export async function addManualGame(
       p_results: toRows(results),
       p_note: note?.trim() || null,
     });
-    if (error) return { ok: false, error: describeDbError(error) };
+    if (error) return refusal(error);
     const gameId = data as string;
     touched(gameId);
     return { ok: true, gameId };
@@ -210,7 +210,7 @@ export async function uploadGamePhoto(
       p_game_id: gameId,
       p_path: path,
     });
-    if (error) return { ok: false, error: describeDbError(error) };
+    if (error) return refusal(error);
     touched(gameId);
     return { ok: true };
   });
@@ -234,7 +234,7 @@ export async function clearGamePhoto(gameId: string): Promise<ActionResult> {
       p_game_id: gameId,
       p_path: null,
     });
-    if (error) return { ok: false, error: describeDbError(error) };
+    if (error) return refusal(error);
     await sb.storage.from("game-photos").remove([path]);
     touched(gameId);
     return { ok: true };

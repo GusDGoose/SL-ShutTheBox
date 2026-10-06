@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { withPin, withSession } from "@/lib/auth";
 import type { ActionResult } from "@/lib/action-result";
-import { describeDbError } from "@/lib/db-errors";
+import { describeDbError, refusal } from "@/lib/db-errors";
 import { parseSnapshot, type LiveSnapshot } from "@/lib/live";
 import { supabaseAdmin } from "@/lib/supabase";
 import { rpc, type RpcArgs, type RpcName } from "@/lib/db-rows";
@@ -41,7 +41,9 @@ export async function startGame(
       p_actor: actorId,
       p_player_ids: playerIds,
     });
-    if (error) return { ok: false, error: describeDbError(error) };
+    // One game a day: the refusal carries the game that holds today, so the
+    // Play screen can send the person to it instead of only saying no.
+    if (error) return refusal(error);
     const snapshot = parseSnapshot(data);
     // Today's page shows a live game, so it needs to know one exists.
     revalidatePath("/");
@@ -184,7 +186,7 @@ export async function finishGame(
       p_actor: actorId,
       p_game_id: gameId,
     });
-    if (error) return { ok: false, error: describeDbError(error) };
+    if (error) return refusal(error);
 
     // A webhook failure must never fail the save, so this is best effort and
     // reads the winner back out of game_results rather than recomputing it.

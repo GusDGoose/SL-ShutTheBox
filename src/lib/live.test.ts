@@ -10,10 +10,13 @@ import {
   type LiveSnapshot,
 } from "@/lib/live";
 import {
+  dayGameOf,
   describeDbError,
   describeDbErrorVerbatim,
   isConflict,
+  refusal,
 } from "@/lib/db-errors";
+import { existingGameOf } from "@/lib/action-result";
 import type { Ruleset } from "@/lib/rules";
 
 const RULES: Ruleset = {
@@ -225,6 +228,59 @@ describe("describeDbError", () => {
       /try again/i,
     );
     expect(describeDbErrorVerbatim(null)).toMatch(/try again/i);
+  });
+
+  it("explains the one-game-a-day refusals", () => {
+    expect(describeDbError({ code: "STB13" })).toMatch(/already has its game/i);
+    expect(describeDbError({ code: "STB14" })).toMatch(/being played/i);
+    expect(isConflict({ code: "STB13" })).toBe(true);
+    expect(isConflict({ code: "STB14" })).toBe(true);
+  });
+
+  // Two phones crowning two games in the same second: the loser hits the
+  // unique index, not the function's check, and must not be told it is
+  // "already keeping score".
+  it("tells the day's index apart from the one-live-game index", () => {
+    expect(
+      describeDbError({
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "games_one_counted_per_day"',
+      }),
+    ).toBe(describeDbError({ code: "STB13" }));
+    expect(
+      describeDbError({
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "games_one_live_per_scorekeeper"',
+      }),
+    ).toBe(describeDbError({ code: "STB09" }));
+  });
+
+  it("names the game that holds the day, when the refusal says which", () => {
+    const id = "2badc66f-1f7f-4dc4-9f4b-071bce4d2b9f";
+    expect(dayGameOf({ code: "STB13", details: id })).toBe(id);
+    expect(dayGameOf({ code: "STB14", details: id })).toBe(id);
+    expect(dayGameOf({ code: "STB02", details: id })).toBeNull();
+    expect(dayGameOf({ code: "STB13", details: "not an id" })).toBeNull();
+    expect(dayGameOf(null)).toBeNull();
+  });
+
+  it("turns a refusal into an action result that carries that game", () => {
+    const id = "2badc66f-1f7f-4dc4-9f4b-071bce4d2b9f";
+    expect(refusal({ code: "STB13", details: id })).toEqual({
+      ok: false,
+      error: describeDbError({ code: "STB13" }),
+      existingGameId: id,
+    });
+    expect(refusal({ code: "STB02" })).toEqual({
+      ok: false,
+      error: describeDbError({ code: "STB02" }),
+    });
+    // …and the page reads it back without caring how it was built.
+    expect(existingGameOf(refusal({ code: "STB14", details: id }))).toBe(id);
+    expect(existingGameOf(refusal({ code: "STB02" }))).toBeNull();
+    expect(existingGameOf({ ok: true })).toBeNull();
   });
 
   it("has copy for the team-play refusals, aimed at people new to the app", () => {
