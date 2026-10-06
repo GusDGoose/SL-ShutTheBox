@@ -563,6 +563,30 @@ begin
 end
 $fn$;
 
+-- ===========================================================================
+-- Everyone at a glance: each player's last five games
+-- ===========================================================================
+
+-- For the Players overview, which shows every player's recent form at once.
+-- Read through PostgREST, a "last five per player" would have to fetch every
+-- result and trim in the app — and api.max_rows (1000) would quietly cut the
+-- oldest players' rows off once the history is long enough. Five per player
+-- stays small for good.
+create view player_recent_form with (security_invoker = true) as
+select player_id, game_id, played_on, finish_position, participants,
+       is_winner, is_shut_box
+  from (
+    select gr.*,
+           row_number() over (
+             partition by gr.player_id
+             order by gr.played_on desc, gr.game_id desc
+           ) as nth
+      from game_results gr
+  ) r
+ where nth <= 5;
+
+grant select on player_recent_form to service_role;
+
 -- ---------------------------------------------------------------------------
 -- Privileges (create or replace keeps them, but say so where it is read)
 -- ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@
 -- Dates are in 2019 so nothing here collides with games a dev database holds.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(21);
+select plan(23);
 
 -- Part B plays today's game; a dev database may already hold a real one.
 update games set deleted_at = now()
@@ -200,6 +200,30 @@ select throws_ok(
       pg_temp.two(3, 9))$$,
   'STB14', null,
   'a game is not recorded for today while one is being played'
+);
+
+-- ---------------------------------------------------------------------------
+-- D. Everyone at a glance: the last five games per player
+-- ---------------------------------------------------------------------------
+-- Ivy has counted games on 2019-03-04, -05 and -06 by now; three more make six.
+do $more$
+begin
+  perform add_manual_game('fd230000-0000-4000-8000-000000000001', d, pg_temp.two(6, 9))
+     from unnest(array['2019-03-07', '2019-03-08', '2019-03-09']::date[]) d;
+end
+$more$;
+
+select is(
+  (select count(*)::int from player_recent_form
+    where player_id = 'fd230000-0000-4000-8000-000000000001'),
+  5,
+  'recent form is a player''s last five games'
+);
+select is(
+  (select min(played_on) from player_recent_form
+    where player_id = 'fd230000-0000-4000-8000-000000000001'),
+  '2019-03-05'::date,
+  'the oldest of six has dropped off'
 );
 
 select * from finish();
