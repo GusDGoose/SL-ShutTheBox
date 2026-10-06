@@ -207,6 +207,13 @@ days from the `games` table, so an orphan row put a day nobody won into the
 index and cut everybody's run short. `games_valid` counts days that were
 actually played. Anything else in that diff is a regression — stop and read it.
 
+Since `0023` that `migration up` ends in an error, on purpose: the v1 fixture
+has two games on 2026-08-03, and `0023` refuses to apply while any day still
+holds more than one counted game (see "One counted game per day" below). Each
+migration runs in its own transaction, so the database is left at `0022` —
+take the after-snapshot and diff as before. For production's three such days,
+`scripts/fixes/2026-10-05-merge-split-days.sql` runs first.
+
 ### The office network blocks Postgres
 
 `supabase db push` connects on 5432/6543, and both are firewalled here — as is
@@ -306,6 +313,14 @@ a fresh project.
 
 ## Gotchas worth knowing
 
+- **One counted game per day.** A finished, not-deleted game is the day's game,
+  and a second one is refused by the partial unique index
+  `games_one_counted_per_day` and, more politely, by `assert_day_free` — STB13
+  "that day already has its game", STB14 "a game is already being played that
+  day", with the id of that game in DETAIL. A mistake is deleted, then replayed;
+  a correction is an edit. Why the database and not the UI:
+  `docs/adr/0001-one-counted-game-per-day.md`. A pgTAP file that plays today's
+  game sets any real one aside first (see 0010) — copy that preamble.
 - Postgres views must keep `with (security_invoker = true)` or they bypass RLS.
 - New tables/views need explicit `grant … to service_role` — newer Supabase
   gives API roles no privileges by default (see 0001_tables.sql).
