@@ -131,16 +131,40 @@ describe("digestBlocks", () => {
 });
 
 describe("prematchBlocks", () => {
+  // 2026-10-05 is a Monday.
+  const MON = "2026-10-05";
+  const TUE = "2026-10-06";
+  const WED = "2026-10-07";
+  const THU = "2026-10-08";
+  const FRI = "2026-10-09";
+
   it("says a match is about to start, and reminds about the fika", () => {
-    const out = said(prematchBlocks(FIKA));
+    const out = said(prematchBlocks(FIKA, MON));
     expect(out).toContain("Snart match");
-    expect(out).toContain("12:45");
     expect(out).toContain("🐙 Ben bjuder på fika");
+  });
+
+  it("calls the 12:45 match on Monday and Tuesday", () => {
+    for (const day of [MON, TUE]) {
+      const out = said(prematchBlocks(FIKA, day));
+      expect(out).toContain("12:45");
+      expect(out).not.toContain("14:00");
+    }
+  });
+
+  it("calls the 14:00 match Wednesday to Friday", () => {
+    // Gustav moved the second half of the week on 2026-10-07; the pg_cron
+    // job for those days fires at 13:55 instead (0024).
+    for (const day of [WED, THU, FRI]) {
+      const out = said(prematchBlocks(FIKA, day));
+      expect(out).toContain("14:00");
+      expect(out).not.toContain("12:45");
+    }
   });
 
   it("does not promise an exact countdown it cannot keep", () => {
     // A card that says "om 5 minuter" is wrong the moment a run is late.
-    expect(said(prematchBlocks(null))).not.toMatch(/om \d+ minuter/);
+    expect(said(prematchBlocks(null, MON))).not.toMatch(/om \d+ minuter/);
   });
 });
 

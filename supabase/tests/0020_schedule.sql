@@ -23,10 +23,11 @@ select is(
   1, 'the Monday digest is scheduled and active'
 );
 
--- Both candidate UTC hours, or the job is wrong for half the year.
+-- Both candidate UTC hours, or the job is wrong for half the year. 0024 cut
+-- this job down to Monday–Tuesday; its 13:55 sibling is tested there.
 select is(
   (select schedule from cron.job where jobname = 'stb_prematch'),
-  '40 10,11 * * 1-5',
+  '40 10,11 * * 1-2',
   'the reminder is scheduled at both the summer and the winter UTC hour'
 );
 select is(

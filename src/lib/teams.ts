@@ -162,11 +162,11 @@ export async function postDigest(digest: Digest): Promise<boolean> {
   return postCard(digestBlocks(digest, await currentFika()));
 }
 
-/** 12:40 on a weekday — just before the box comes out. */
-export async function postPrematch(): Promise<boolean> {
+/** Just before the box comes out on `date` — 12:40 or 13:55, by weekday. */
+export async function postPrematch(date: string): Promise<boolean> {
   const appUrl = appOrigin(process.env.APP_URL);
   return postCard(
-    prematchBlocks(await currentFika()),
+    prematchBlocks(await currentFika(), date),
     appUrl ? [{ title: "Starta matchen 🎲", url: `${appUrl}/play` }] : [],
   );
 }

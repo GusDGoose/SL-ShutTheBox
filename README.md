@@ -383,7 +383,7 @@ live.
 | When (Stockholm) | What |
 |---|---|
 | every crowned game | 👑 the winner card, with the fika line |
-| weekdays 12:40 | 🎲 "Snart match!" — five minutes before the box comes out |
+| Mon–Tue 12:40, Wed–Fri 13:55 | 🎲 "Snart match!" — five minutes before the box comes out (12:45 / 14:00) |
 | Mondays 10:00 | 🎲 last week's digest, and ☕ who is buying fika |
 
 **The schedule lives in the database, not in `vercel.json`.** Vercel's Hobby

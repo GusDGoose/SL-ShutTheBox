@@ -8,7 +8,9 @@ import { postPrematch } from "@/lib/teams";
 export const dynamic = "force-dynamic";
 
 /**
- * 12:40 on a weekday — the reminder that the box is coming out at 12:45.
+ * Five minutes before the box comes out on a weekday: 12:40 for the 12:45
+ * match on Monday–Tuesday, 13:55 for the 14:00 match Wednesday–Friday (0024).
+ * The card reads the time off the date, so a replay says the right one.
  *
  * It replaced a 14:00 "nobody played today" nudge, which arrived after the
  * moment it was nudging about. This one is only useful if it is on time, and
@@ -17,9 +19,9 @@ export const dynamic = "force-dynamic";
  * somewhere inside the hour and cannot express a Stockholm wall-clock time
  * across daylight saving.
  *
- * It does not check whether a game has already been played. At 12:40 nobody
- * has, and a reminder that quietly declines to fire is worse than one too
- * many.
+ * It does not check whether a game has already been played. Five minutes
+ * before the match nobody has, and a reminder that quietly declines to fire
+ * is worse than one too many.
  */
 export async function GET(request: Request) {
   try {
@@ -49,7 +51,7 @@ export async function GET(request: Request) {
   if (error) throw new Error(error.message);
 
   const alreadyPlaying = (count ?? 0) > 0;
-  const posted = alreadyPlaying ? false : await postPrematch();
+  const posted = alreadyPlaying ? false : await postPrematch(today);
   const outcome = alreadyPlaying
     ? "a game is already under way"
     : posted

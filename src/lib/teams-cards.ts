@@ -140,7 +140,23 @@ export function digestBlocks(d: Digest, fika: FikaLine): CardBlock[] {
 }
 
 /**
- * 12:40 — just before the box comes out.
+ * When the box comes out on a `YYYY-MM-DD` date: 12:45 Monday and Tuesday,
+ * 14:00 Wednesday to Friday (Gustav, 2026-10-07).
+ *
+ * [concept: SQL twin] pg_cron decides WHEN the reminder fires and this
+ * decides what it SAYS, so the same weekday split lives in 0024 too: 12:40
+ * on Monday–Tuesday, 13:55 Wednesday–Friday. Change one, change both.
+ * Keyed on the date rather than the clock so a manual `?on=` replay still
+ * names that day's time.
+ */
+function kickoffTime(date: string): string {
+  // getUTCDay: 0 = Sunday, 3 = Wednesday, 5 = Friday.
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+  return weekday >= 3 && weekday <= 5 ? "14:00" : "12:45";
+}
+
+/**
+ * Five minutes before the box comes out — 12:40 or 13:55, see kickoffTime.
  *
  * This replaces an "is anyone playing?" nudge that fired at 14:00, after the
  * fact, which Gustav dropped on 2026-09-14: a reminder is only worth sending
@@ -151,10 +167,12 @@ export function digestBlocks(d: Digest, fika: FikaLine): CardBlock[] {
  * if a run is ever a minute or two late, and a reminder that contradicts the
  * clock is worse than a vague one.
  */
-export function prematchBlocks(fika: FikaLine): CardBlock[] {
+export function prematchBlocks(fika: FikaLine, date: string): CardBlock[] {
   return [
     heading("🎲 Snart match!"),
-    text("Vi kör 12:45 vid lådan, om några minuter. Lägst poäng vinner dagen."),
+    text(
+      `Vi kör ${kickoffTime(date)} vid lådan, om några minuter. Lägst poäng vinner dagen.`,
+    ),
     ...fikaLine(fika),
   ];
 }
