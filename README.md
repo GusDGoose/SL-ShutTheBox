@@ -160,6 +160,9 @@ and functions; needs the local stack running), `npm run e2e` (Playwright).
      cookies. Without it the app fails closed and nobody gets past `/pin`.
    - `CRON_SECRET` — a long random string; the bearer token the two cron
      routes require.
+   - `INTAKE_SECRET` — optional, **Production only**; the bearer token the
+     new-player intake flow sends to `POST /api/intake/player`. See
+     `docs/deltagartillstand-intake.md`.
    - `TEAMS_WEBHOOK_URL` — optional, see below
    Env var changes require a redeploy to take effect.
 3. **Teams announcement** (optional): in the Teams channel → ⋯ → Workflows →

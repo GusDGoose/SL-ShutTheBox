@@ -44,6 +44,11 @@ describe("proxy matcher", () => {
     expect(gated("/api/cron/afternoon")).toBe(false);
   });
 
+  it("exempts the intake route (it carries INTAKE_SECRET instead)", () => {
+    expect(gated("/api/intake/player")).toBe(false);
+    expect(gated("/api/intakefoo")).toBe(true);
+  });
+
   it("exempts PWA files, which the browser fetches without cookies", () => {
     expect(gated("/manifest.webmanifest")).toBe(false);
     expect(gated("/icon.svg")).toBe(false);

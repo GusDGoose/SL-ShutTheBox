@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { requireIntake, SessionError } from "@/lib/auth";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -40,6 +41,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Body must be JSON." }, { status: 400 });
   }
 
+  // `null`, a string or an array is valid JSON too, and would otherwise reach
+  // the field reads below as a TypeError (a 500) or as silent nonsense.
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return NextResponse.json({ error: "Body must be a JSON object." }, { status: 400 });
+  }
   const fields = body as Record<string, unknown>;
   const name = typeof fields.name === "string" ? fields.name.trim() : "";
   const emoji =
@@ -82,6 +88,9 @@ export async function POST(request: Request) {
       ? `added via deltagartillstånd intake; permit ${permitNo}`
       : "added via deltagartillstånd intake",
   });
+
+  // Same as createPlayer: the roster page must not keep serving the old list.
+  revalidatePath("/players");
 
   return NextResponse.json(
     { id: data.id, name: data.name, emoji: data.emoji, permit_no: permitNo || null },

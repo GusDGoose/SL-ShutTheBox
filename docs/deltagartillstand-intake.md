@@ -65,7 +65,7 @@ Content-Type: application/json
 | `201 { id, name, emoji, permit_no }` | Player created |
 | `400 { error }` | Body is not JSON, or `name` is missing |
 | `401 { error }` | Secret missing or wrong (or `INTAKE_SECRET` not set) |
-| `409 { error }` | A player with that name is already on the roster — a safe re-run of an approved application reads as this, not a server error |
+| `409 { error }` | A player with that name is already on the roster. Either a re-run of the same application, or a *different* colleague with the same name — the flow cannot tell which and gets no `id` to store, so route it to the game master for a manual look rather than treating it as success |
 | `500 { error }` | Any other database error |
 
 ### Why the permit number is not a column
@@ -145,14 +145,15 @@ concat(
 )
 ```
 
-`convertTimeZone` keeps the year correct across the New Year boundary. The count
-is taken **after** this application is already `Beviljad`-filtered out of the
-set, so the first grant of the year is `0001`.
+`convertTimeZone` keeps the year correct across the New Year boundary. Step ④
+counts *before* step ⑤ marks this application `Beviljad`, so it is not in the
+count yet and the first grant of the year is `0001`.
 
 Concurrency note: counting approved rows assumes approvals happen one at a time,
 which for an office game they do. If two were ever approved in the same second,
-use the SharePoint item `ID` (always unique, never reused) instead:
-`SL-STB-<year>-` padded with `formatNumber(triggerOutputs()?['body/ID'], '0000')`.
+use the SharePoint item `ID` (always unique, never reused) instead — the one
+step ② *Create item* returned, not the trigger's (the email trigger has none):
+`SL-STB-<year>-` padded with `formatNumber(outputs('Create_item')?['body/ID'], '0000')`.
 
 ### The match invites
 
