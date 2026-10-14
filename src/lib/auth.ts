@@ -115,14 +115,35 @@ export async function requireSessionPage(next: string): Promise<Session> {
 
 /** Cron routes carry a shared secret instead of a PIN. */
 export function requireCron(request: Request): void {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) throw new SessionError("CRON_SECRET is not set");
+  requireBearer(request, process.env.CRON_SECRET, "cron");
+}
 
+/**
+ * The intake route (the "deltagartillstånd" Power Automate flow) carries its
+ * own shared secret, separate from CRON_SECRET so that a leak of one does not
+ * grant the other: a flow that can add players should not also be able to drive
+ * the Teams cron jobs, and vice versa.
+ */
+export function requireIntake(request: Request): void {
+  requireBearer(request, process.env.INTAKE_SECRET, "intake");
+}
+
+/**
+ * Shared `Authorization: Bearer <secret>` check for the machine-to-machine
+ * routes. Compares in constant time, and on equal length only — timingSafeEqual
+ * throws on a length mismatch, which would itself leak the length.
+ */
+function requireBearer(
+  request: Request,
+  expected: string | undefined,
+  label: string,
+): void {
+  if (!expected) throw new SessionError(`${label.toUpperCase()}_SECRET is not set`);
   const provided = request.headers.get("authorization") ?? "";
   const wanted = `Bearer ${expected}`;
-  if (provided.length !== wanted.length) throw new SessionError("Bad cron secret");
+  if (provided.length !== wanted.length) throw new SessionError(`Bad ${label} secret`);
   if (!timingSafeEqual(Buffer.from(provided), Buffer.from(wanted))) {
-    throw new SessionError("Bad cron secret");
+    throw new SessionError(`Bad ${label} secret`);
   }
 }
 
