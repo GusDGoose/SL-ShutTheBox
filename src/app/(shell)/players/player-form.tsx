@@ -18,13 +18,21 @@ const inputCls =
  * A new colleague: a name and an emoji. Their song is theirs to set, on their
  * own profile, once they have said who they are.
  */
-export function AddPlayerForm() {
+export function AddPlayerForm({
+  prefill,
+}: {
+  prefill?: { name: string; emoji: string };
+}) {
   // [concept: useActionState] Binds a Server Action to form state — submit
   // runs on the server, and `state.error` / `state.ok` re-render this form.
   const [state, formAction, pending] = useActionState<PlayerFormState, FormData>(
     createPlayer,
     {},
   );
+
+  // The welcome link's values fill the first form only. After a successful add
+  // the remounted form must come back empty, or a second press reads as a 409.
+  const start = state.ok ? undefined : prefill;
 
   return (
     // Keyed on the success stamp: a new key remounts the form with empty
@@ -37,11 +45,17 @@ export function AddPlayerForm() {
     >
       <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs font-medium text-ink-muted">
         Name
-        <input name="name" required placeholder="New colleague" className={inputCls} />
+        <input
+          name="name"
+          required
+          placeholder="New colleague"
+          defaultValue={start?.name}
+          className={inputCls}
+        />
       </label>
       <label className="flex w-16 flex-col gap-1 text-xs font-medium text-ink-muted">
         Emoji
-        <input name="emoji" placeholder="🎲" className={inputCls} />
+        <input name="emoji" placeholder="🎲" defaultValue={start?.emoji} className={inputCls} />
       </label>
       <button type="submit" disabled={pending} className={buttonClass("primary")}>
         {pending ? "Adding…" : "Add player"}

@@ -2,6 +2,7 @@ import { PlayerCard } from "@/components/players/player-card";
 import { buttonClass } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getIdentity } from "@/lib/auth";
+import { readPlayerPrefill } from "@/lib/player-prefill";
 import { getPlayerCards } from "@/lib/queries/players";
 import { songLabelFor } from "@/lib/queries/song-titles";
 import { AddPlayerForm } from "./player-form";
@@ -22,7 +23,8 @@ export const metadata = { title: "Players · Shut the Box" };
  * your own profile.
  *
  * Reachable before picking an identity — a new colleague adds themselves here
- * first (the "who are you?" page links to ?add), then picks their name.
+ * first (the "who are you?" page links to ?add), then picks their name. The
+ * intake flow's welcome email adds &name=…&emoji=… so the form is filled in.
  */
 export default async function PlayersPage({
   searchParams,
@@ -33,6 +35,7 @@ export default async function PlayersPage({
     searchParams,
   ]);
   const everyone = [...active, ...benched];
+  const prefill = readPlayerPrefill(params);
   const songs = new Map(
     await Promise.all(
       everyone.map(async (c) => [c.player.id, await songLabelFor(c.player)] as const),
@@ -66,13 +69,13 @@ export default async function PlayersPage({
 
       <details
         className="flex flex-col gap-3"
-        open={"add" in params || active.length === 0}
+        open={"add" in params || prefill.name !== "" || active.length === 0}
       >
         <summary className={`${buttonClass("secondary")} cursor-pointer list-none self-start`}>
           + Add a player
         </summary>
         <div className="mt-3">
-          <AddPlayerForm />
+          <AddPlayerForm prefill={prefill} />
         </div>
       </details>
 
