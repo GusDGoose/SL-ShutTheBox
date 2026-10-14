@@ -2,18 +2,23 @@
 
 How a new colleague joins the daily game. A paper application ("blankett") is
 filled in by hand, scanned, approved by the game master, and given a permit
-number ("deltagartillstånd"). On approval a Power Automate flow puts them on the
-roster, adds them to the Teams group, gets them onto the daily match invites and
-sends a welcome with the PIN.
+number ("deltagartillstånd"). On approval a Power Automate flow adds them to the
+Teams group, gets them onto the daily match invites and sends a welcome with the
+PIN and a link that puts them on the roster in one click.
 
-This runbook is the design and the build guide. It has two halves that meet at
-one point:
+This runbook is the design and the build guide.
 
 - **The process** lives in Power Automate / SharePoint (the cloud). It owns the
   register of applications, the approval, the permit number and the onboarding.
-- **The integration point** — putting the approved colleague on the roster —
-  lives in this repo, because the app has no other way in. Everything else the
-  flow does with Microsoft 365 tools it already has.
+  Every step uses **standard** connectors — no Power Automate Premium licence.
+- **Joining the roster** happens in the app, by the new colleague: the welcome
+  link opens `/players` with their name and emoji already filled in, and they
+  press "Add player". This is the same self-service path any colleague has
+  always used (`createPlayer`, PIN only), so the flow needs no secret and no
+  HTTP action.
+- **Optional, Premium only:** a machine endpoint (`POST /api/intake/player`)
+  lets the flow add the player itself instead. See
+  [The Premium alternative](#the-premium-alternative--post-apiintakeplayer).
 
 ```
 ① Scanned blankett (PDF/image) lands in a mailbox or SharePoint folder
@@ -31,17 +36,44 @@ one point:
                       ├─ ⑤ Update register (Beviljad, number, date, approver)
                       ├─ ⑥ Add to the Teams group   (Teams · Add a member to a team)
                       ├─ ⑦ Add to the daily match series (Gustav's calendar)
-                      ├─ ⑧ HTTP POST → the app: create the player  ← this repo
-                      └─ ⑨ Welcome email/Teams: number + PIN + /whoami link
+                      └─ ⑧ Welcome email/Teams: number + PIN + prefilled join link
+                              │
+                              ▼
+                        The colleague opens the link, enters the PIN,
+                        presses "Add player", then picks their name  ← the app
 ```
 
 Once the player row exists, the fika rota, the stats views and the season pick
 them up automatically — there is no further step for any of that.
 
-## The integration point — `POST /api/intake/player`
+## The welcome link
 
-The one thing the flow cannot do with an off-the-shelf connector is add a row to
-the `players` table. The app exposes a single machine endpoint for it, reached
+```
+https://sl-shut-the-box-opal.vercel.app/players?add&name=<name>&emoji=<emoji>
+```
+
+- `add` opens the "Add a player" form; `name` and `emoji` fill it in
+  (`readPlayerPrefill` in `src/lib/player-prefill.ts`). Both are optional — a
+  bare `/players?add` is an empty form.
+- Build it in the flow with `encodeUriComponent()` on both values, e.g.
+  `concat('https://sl-shut-the-box-opal.vercel.app/players?add&name=',
+  encodeUriComponent(<name>), '&emoji=', encodeUriComponent(<emoji>))`.
+- On a device without the PIN cookie, the proxy sends them to `/pin` first and
+  back to the same link afterwards, query string and all.
+- The values are only a starting point: the colleague can fix their name before
+  pressing "Add player", and `createPlayer` validates whatever is submitted.
+  A name already on the roster reads as "already on the roster" in the form.
+
+What this path does not record is the permit number in the app's `audit_log`.
+It lives in the SharePoint register, which owns it anyway.
+
+## The Premium alternative — `POST /api/intake/player`
+
+Only if the flow owner has a Power Automate Premium licence (the *HTTP* action
+is a Premium connector) and you want the flow, not the colleague, to create the
+player. It replaces the link-click; everything else stays the same.
+
+The app exposes a single machine endpoint for it, reached
 with a bearer secret instead of the PIN cookie — the same machine-to-machine
 pattern the scheduled Teams jobs use (`/api/cron/*`, `requireCron`).
 
@@ -111,7 +143,7 @@ One list, which doubles as the register/diary ("diarium") and the flow's memory.
 | PermitNo | Single line | `SL-STB-2026-0001`, set on approval |
 | DecisionDate | Date | Set on approval/rejection |
 | Approver | Person | The game master |
-| AppUserId | Single line | The `id` the endpoint returns, stored for traceability |
+| AppUserId | Single line | Premium variant only: the `id` the endpoint returns |
 
 ## The Power Automate flow, step by step
 
@@ -124,8 +156,12 @@ One list, which doubles as the register/diary ("diarium") and the flow's memory.
 | ⑤ | SharePoint *Update item* | `Status = Beviljad`, `PermitNo`, `DecisionDate`, `Approver`. |
 | ⑥ | Teams *Add a member to a team* | The game's Teams group + the new colleague's account. |
 | ⑦ | Add to the daily match series | See "The match invites" below. |
-| ⑧ | *HTTP* (premium) → `POST /api/intake/player` | Body `{ name, emoji, permit_no }`. Put the `Authorization` header value under **Settings → Secure inputs** so the secret never shows in run history. Store the returned `id` back into the register (`AppUserId`). |
-| ⑨ | *Send an email (V2)* or Teams *Post message in a chat* | Permit number + the team PIN + a link to `<app-url>/whoami` so they can pick who they are. Optionally include the match join links as a fallback. |
+| ⑧ | *Send an email (V2)* or Teams *Post message in a chat* | Permit number + the team PIN + the [welcome link](#the-welcome-link), with a line like *"Open the link, enter the PIN, press Add player, then pick your name."* Optionally include the match join links as a fallback. |
+
+Premium variant: insert an *HTTP* → `POST /api/intake/player` step before ⑧
+(body `{ name, emoji, permit_no }`, `Authorization` header under **Settings →
+Secure inputs**, returned `id` into `AppUserId`), and link the welcome to
+`/whoami` instead of `/players`.
 
 On the Reject branch: *Update item* `Status = Avslagen` + `DecisionDate`, then
 email the applicant the reason from the approval.
@@ -181,22 +217,23 @@ Two ways to build it:
   registration with `Calendars.ReadWrite` application permission and admin
   consent. Cleaner semantics, more setup.
 
-Because the matches are Teams meetings with a join link, step ⑨'s welcome can
+Because the matches are Teams meetings with a join link, step ⑧'s welcome can
 also carry the join links directly, so the new player can join the first match
 even before the calendar update has propagated.
 
 ## Setup checklist
 
-1. `INTAKE_SECRET` set on Vercel (Production), app redeployed.
-2. SharePoint register list created with the columns above.
-3. The game's Teams group id and the new-member action tested.
-4. The weekday match-series event ids collected (low-code route), or the Entra
+1. SharePoint register list created with the columns above.
+2. The game's Teams group id and the new-member action tested.
+3. The weekday match-series event ids collected (low-code route), or the Entra
    app registered and consented (Graph route).
-5. Gustav a co-owner of the flow (so the calendar and Teams steps keep working).
-6. A test run end to end against a throwaway name, then that test player benched
-   or deleted from the app afterwards.
+4. Gustav a co-owner of the flow (so the calendar and Teams steps keep working).
+5. A test run end to end against a throwaway name: open the welcome link on a
+   phone, add the player, then bench or delete that test player afterwards.
+6. Premium variant only: `INTAKE_SECRET` is already on Vercel (Production, set
+   2026-10-14); the flow owner needs its value for the HTTP step.
 
-## Testing the endpoint directly
+## Testing the endpoint directly (Premium variant)
 
 With the local stack running (`npm run db:start`) and `INTAKE_SECRET` in
 `.env.local`:
