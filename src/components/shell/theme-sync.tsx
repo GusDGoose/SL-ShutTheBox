@@ -9,6 +9,7 @@ import {
   type Mode,
   type Theme,
 } from "@/lib/theme";
+import { parseSkin, resolveSkin } from "@/lib/skins";
 
 /** How often an open tab checks whether the season has turned. */
 const SEASON_CHECK_MS = 10 * 60 * 1000;
@@ -19,7 +20,8 @@ const SEASON_CHECK_MS = 10 * 60 * 1000;
  * The inline head script has already resolved "system" before the first paint;
  * this covers the cases it cannot: React remounting the tree in dev Strict
  * Mode, the OS flipping light/dark while the tab is open, and a "seasonal"
- * board left open on the office screen across the night the season turns.
+ * board — or the weekly style — left open on the office screen across the
+ * night it turns.
  *
  * Both picks are read back from <html data-theme-pick/data-mode-pick> rather than the props,
  * because the picker changes it without a server round trip and the root
@@ -33,6 +35,8 @@ export function ThemeSync({ theme, mode }: { theme: Theme; mode: Mode }) {
       const pick = parseTheme(root.dataset.themePick ?? theme);
       const board = resolveTheme(pick);
       if (root.dataset.theme !== board) root.dataset.theme = board;
+      const skin = resolveSkin(parseSkin(root.dataset.skinPick));
+      if (root.dataset.skin !== skin) root.dataset.skin = skin;
       root.dataset.mode = resolveMode(
         board,
         parseMode(root.dataset.modePick ?? mode),

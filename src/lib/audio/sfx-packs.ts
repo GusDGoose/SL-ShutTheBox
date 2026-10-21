@@ -424,8 +424,54 @@ export const SFX_PACKS: Record<Season, SfxPack> = {
   },
 };
 
-/** The pack for a board, if it has one. */
-export function packFor(theme: string | undefined): SfxPack | undefined {
-  return theme ? (SFX_PACKS as Partial<Record<string, SfxPack>>)[theme] : undefined;
-}
+/**
+ * The 90s skin's own voice: square waves and blips, like a sound card from
+ * 1994. Played for anything the season does not already have a sound for, so
+ * a retro week at Christmas still gets its sleigh bells.
+ */
+export const CHIPTUNE: SfxPack = {
+  tileDown: (ctx, out, at) => {
+    tone(ctx, out, at, { frequency: 330, endFrequency: 110, duration: 0.08, gain: 0.12, type: "square" });
+    noiseBurst(ctx, out, at, { duration: 0.04, cutoff: 2500, gain: 0.2 });
+  },
+  tileUp: (ctx, out, at) => {
+    tone(ctx, out, at, { frequency: 440, endFrequency: 880, duration: 0.06, gain: 0.08, type: "square" });
+  },
+  endTurn: (ctx, out, at) => {
+    melody([[72, 0.06], [67, 0.06], [60, 0.1]], at, (f, t, l) =>
+      tone(ctx, out, t, { frequency: f, duration: l, gain: 0.08, type: "square" }),
+    );
+  },
+  shut: (ctx, out, at) => {
+    melody([[60, 0.05], [64, 0.05], [67, 0.05], [72, 0.05], [76, 0.05], [79, 0.05], [84, 0.25]], at, (f, t, l) =>
+      tone(ctx, out, t, { frequency: f, duration: l, gain: 0.09, type: "square" }),
+    );
+  },
+  // A level-clear jingle: arpeggio up, then a held chord.
+  fanfare: (ctx, out, at) => {
+    const end = melody(
+      [[67, 0.08], [72, 0.08], [76, 0.08], [79, 0.08], [84, 0.08], [79, 0.08], [84, 0.08], [88, 0.08]],
+      at,
+      (f, t, l) => tone(ctx, out, t, { frequency: f, duration: l, gain: 0.09, type: "square" }),
+    );
+    for (const n of [72, 76, 79, 84]) {
+      tone(ctx, out, end, { frequency: midi(n), duration: 0.45, gain: 0.05, type: "square" });
+    }
+    tone(ctx, out, end, { frequency: midi(48), duration: 0.45, gain: 0.1, type: "triangle" });
+  },
+  badge: (ctx, out, at) => {
+    tone(ctx, out, at, { frequency: midi(88), duration: 0.07, gain: 0.08, type: "square" });
+    tone(ctx, out, at + 0.08, { frequency: midi(93), duration: 0.18, gain: 0.08, type: "square" });
+  },
+  error: (ctx, out, at) => {
+    tone(ctx, out, at, { frequency: 140, duration: 0.09, gain: 0.12, type: "square" });
+    tone(ctx, out, at + 0.1, { frequency: 100, duration: 0.14, gain: 0.12, type: "square" });
+  },
+};
+
+/** Every pack the player knows, keyed by season — and "skin:retro" for the 90s weeks. */
+export const ALL_PACKS: Partial<Record<string, SfxPack>> = {
+  ...SFX_PACKS,
+  "skin:retro": CHIPTUNE,
+};
 

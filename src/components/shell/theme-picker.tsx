@@ -16,6 +16,13 @@ import {
   type Theme,
 } from "@/lib/theme";
 import { SEASONS } from "@/lib/seasons";
+import {
+  SKINS,
+  SKIN_COOKIE,
+  SKIN_META,
+  resolveSkin,
+  type SkinPick,
+} from "@/lib/skins";
 import { useSeasonEffects } from "@/components/shell/season-ambient";
 
 // Both pickers write the cookie and stamp <html> in the same tick, so the board
@@ -32,6 +39,12 @@ function applyToDocument(theme: Theme, mode: Mode) {
   root.dataset.themePick = theme;
   root.dataset.modePick = mode;
   root.dataset.mode = resolveMode(board, mode, prefersDark);
+}
+
+function applySkin(pick: SkinPick) {
+  const root = document.documentElement;
+  root.dataset.skinPick = pick;
+  root.dataset.skin = resolveSkin(pick);
 }
 
 /** A little board: felt tray, two tiles, brass hardware, and its emoji. */
@@ -73,10 +86,13 @@ function cardClass(selected: boolean) {
 export function AppearanceControls({
   initialTheme,
   initialMode,
+  initialSkin,
 }: {
   initialTheme: Theme;
   initialMode: Mode;
+  initialSkin: SkinPick;
 }) {
+  const [skin, setSkin] = useState<SkinPick>(initialSkin);
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [mode, setMode] = useState<Mode>(initialMode);
   const [effects, setEffects] = useSeasonEffects();
@@ -88,6 +104,12 @@ export function AppearanceControls({
     setTheme(next);
     persist(THEME_COOKIE, next);
     applyToDocument(next, mode);
+  }
+
+  function chooseSkin(next: SkinPick) {
+    setSkin(next);
+    persist(SKIN_COOKIE, next);
+    applySkin(next);
   }
 
   function chooseMode(next: Mode) {
@@ -122,6 +144,42 @@ export function AppearanceControls({
 
   return (
     <div className="flex flex-col gap-6">
+      <section className="flex flex-col gap-3">
+        <h2 className="eyebrow">Style</h2>
+        <ul className="grid grid-cols-3 gap-3">
+          {(["auto", ...SKINS] as SkinPick[]).map((id) => {
+            const selected = id === skin;
+            const meta =
+              id === "auto"
+                ? {
+                    name: "Weekly",
+                    blurb: `Takes turns every Monday. This week: ${SKIN_META[resolveSkin("auto")].name}.`,
+                    emoji: "🔁",
+                  }
+                : SKIN_META[id];
+            return (
+              <li key={id}>
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => chooseSkin(id)}
+                  className={cardClass(selected)}
+                >
+                  <span aria-hidden className="text-2xl">
+                    {meta.emoji}
+                  </span>
+                  <span className="flex items-center gap-1 text-sm font-semibold">
+                    {meta.name}
+                    {selected && <Check aria-hidden size={14} />}
+                  </span>
+                  <span className="text-xs text-ink-muted">{meta.blurb}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
       <section className="flex flex-col gap-3">
         <h2 className="eyebrow">Board</h2>
         <button

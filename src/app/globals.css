@@ -38,12 +38,6 @@
      the lamp-lit ink is pale, so text-ink on a brass button used to all but
      vanish in dark mode. */
   --on-brass: #2b1f17;
-  /* [concept: the grain has to reach the tiles] .tile-face paints with
-     var(--grain), but the grain used to be defined only on .wood and
-     .wood-chrome — and the tiles sit on the felt, outside both. An undefined
-     var() voids the whole background-image, so every tile lost its wood
-     gradient and showed the felt through. Defined here, it reaches them. */
-  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9 0.02' numOctaves='3' seed='7'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.16'/%3E%3C/svg%3E");
   color-scheme: light;
 }
 
@@ -771,12 +765,12 @@ header.wood-chrome::after {
 }
 
 @layer components {
-  /* Two ~1KB inline SVG noise fields, tinted by whatever colour sits behind
-     them — no image requests, and they follow the theme for free. */
+  /* The plain base for the chrome and the felt. The skins at the end of this
+     file draw over it — cartoon or 90s — so this is only what shows if a page
+     ever renders without a data-skin. The felt keeps its faint nap. */
   .wood {
-    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9 0.02' numOctaves='3' seed='7'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.16'/%3E%3C/svg%3E");
     background-color: var(--color-wood);
-    background-image: var(--grain),
+    background-image:
       linear-gradient(
         90deg,
         rgb(255 255 255 / 0.08),
@@ -798,9 +792,8 @@ header.wood-chrome::after {
      it reads as the darker frame the tray sits in. e2e/a11y.spec.ts holds
      the line. */
   .wood-chrome {
-    --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9 0.02' numOctaves='3' seed='7'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.16'/%3E%3C/svg%3E");
     background-color: color-mix(in srgb, var(--color-wood) 40%, black);
-    background-image: var(--grain),
+    background-image:
       linear-gradient(
         90deg,
         rgb(255 255 255 / 0.06),
@@ -846,7 +839,7 @@ header.wood-chrome::after {
     justify-content: center;
     padding-bottom: 0.4rem;
     border-radius: var(--radius-tile);
-    background-image: var(--grain),
+    background-image:
       linear-gradient(
         180deg,
         var(--color-wood-light) 0%,
@@ -986,5 +979,367 @@ header.wood-chrome::after {
     95% {
       transform: rotate(-6deg);
     }
+  }
+}
+
+/* ===========================================================================
+   SKINS — src/lib/skins.ts. Cartoon and 90s take turns, a week each.
+
+   [concept: skins only read tokens] Nothing below names a colour of its own
+   except black, white and the outline. Every fill comes from the board's
+   tokens (--felt, --wood-light, --brass, --surface…), which is what lets a
+   skin wear any season — a Christmas cartoon, a Halloween 1996 — with no CSS
+   written for the pair. Unlayered on purpose: a skin has to win over the
+   utilities the components were written with.
+   =========================================================================== */
+
+/* Selectors for the hooks the components already carry. */
+/* Display headings: font-[family-name:var(--font-display)] */
+/* Cards: rounded-[var(--radius-card)] + border */
+
+/* --------------------------------------------------------------- Cartoon */
+[data-skin="cartoon"] {
+  --outline: #1d1712;
+  --font-display: var(--font-lilita), "Arial Rounded MT Bold", system-ui, sans-serif;
+  --font-sans: var(--font-fredoka), ui-rounded, system-ui, sans-serif;
+  --radius-tile: 0.7rem;
+  --radius-control: 1rem;
+  --radius-card: 1.25rem;
+  --shadow-card: 4px 4px 0 var(--outline);
+  --line: var(--outline);
+}
+[data-skin="cartoon"][data-mode="dark"] {
+  --outline: #000;
+}
+
+/* Comic-book dots behind everything, in the board's hardware colour. */
+[data-skin="cartoon"] body {
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--brass) 28%, transparent) 1.6px,
+    transparent 2.2px
+  );
+  background-size: 22px 22px;
+}
+
+[data-skin="cartoon"] .font-\[family-name\:var\(--font-display\)\] {
+  font-weight: 400;
+  letter-spacing: 0.01em;
+}
+[data-skin="cartoon"] main h1.font-\[family-name\:var\(--font-display\)\],
+[data-skin="cartoon"] main h2.font-\[family-name\:var\(--font-display\)\] {
+  text-shadow: 3px 3px 0 color-mix(in srgb, var(--brass) 75%, transparent);
+}
+[data-skin="cartoon"] .eyebrow {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+}
+
+/* Header, tab rail and focus bar: flat paint, a fat ink edge, outlined type. */
+[data-skin="cartoon"] .wood-chrome,
+[data-skin="cartoon"] .wood {
+  background-color: var(--felt-deep);
+  background-image: none;
+  text-shadow: 2px 2px 0 var(--outline);
+}
+[data-skin="cartoon"] header.wood-chrome,
+[data-skin="cartoon"] header.wood {
+  border-bottom: 4px solid var(--outline);
+}
+@media (max-width: 47.99rem) {
+  [data-skin="cartoon"] nav.wood-chrome {
+    border-top: 4px solid var(--outline);
+  }
+}
+@media (min-width: 48rem) {
+  [data-skin="cartoon"] nav.wood-chrome {
+    background: none;
+  }
+}
+[data-skin="cartoon"] nav.wood-chrome a[aria-current="page"] > span:first-child {
+  background: var(--brass);
+  color: var(--on-brass);
+  border: 3px solid var(--outline);
+  box-shadow: 2px 2px 0 var(--outline);
+}
+@media (min-width: 48rem) {
+  [data-skin="cartoon"] nav.wood-chrome a[aria-current="page"] > span:first-child {
+    background: none;
+    color: inherit;
+    border: 0;
+    box-shadow: none;
+  }
+}
+
+/* Cards: an ink outline and a hard shadow, like a sticker. */
+[data-skin="cartoon"] .border {
+  border-width: 2.5px;
+}
+[data-skin="cartoon"] .rounded-\[var\(--radius-card\)\].border {
+  box-shadow: 4px 4px 0 var(--outline);
+}
+
+/* Buttons: outlined, with a lip that squashes when pressed. */
+[data-skin="cartoon"] .btn {
+  border: 3px solid var(--outline);
+  box-shadow: 0 4px 0 var(--outline);
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+[data-skin="cartoon"] .btn:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--outline);
+}
+[data-skin="cartoon"] .btn-secondary {
+  background: var(--surface);
+}
+[data-skin="cartoon"] .btn-ghost {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* The tray: flat felt in a thick ink frame. */
+[data-skin="cartoon"] .felt {
+  background-image: var(--felt-pattern, linear-gradient(transparent, transparent));
+  border: 4px solid var(--outline);
+  box-shadow: 5px 5px 0 var(--outline);
+}
+[data-skin="cartoon"] .tray[data-shut="true"] {
+  box-shadow:
+    5px 5px 0 var(--outline),
+    0 0 0 6px var(--shut);
+}
+
+/* Tiles: flat paint, ink outline, a chunky lip; a tile knocked down squashes flat. */
+[data-skin="cartoon"] .tile-face {
+  background-image: none;
+  background-color: var(--wood-light);
+  border: 3px solid var(--outline);
+  box-shadow:
+    inset 0 -5px 0 color-mix(in srgb, var(--wood) 80%, transparent),
+    0 4px 0 var(--outline);
+  font-weight: 400;
+  font-size: clamp(1.4rem, 4.6vw, 2rem);
+  transform-origin: bottom center;
+}
+[data-skin="cartoon"] .tile-face::before {
+  inset: 0.25rem auto auto 50%;
+  width: 0.45rem;
+  height: 0.45rem;
+  translate: -50% 0;
+  background: var(--brass);
+  border: 2px solid var(--outline);
+  opacity: 1;
+}
+[data-skin="cartoon"] .tile[data-down="true"] .tile-face {
+  transform: scaleY(0.3);
+  filter: none;
+  background-color: var(--wood-dark);
+  box-shadow: 0 2px 0 var(--outline);
+}
+[data-skin="cartoon"] .tile[data-down="true"] .tile-face > *,
+[data-skin="cartoon"] .tile[data-down="true"] .tile-face::before {
+  opacity: 0;
+}
+
+/* -------------------------------------------------------------------- 90s */
+[data-skin="retro"] {
+  --font-display: var(--font-silkscreen), "Courier New", monospace;
+  --font-sans: Tahoma, Verdana, "Segoe UI", "DejaVu Sans", sans-serif;
+  --font-digits: var(--font-vt323), "Courier New", monospace;
+  --radius-tile: 0;
+  --radius-control: 0;
+  --radius-card: 0;
+  /* Win95 bevels, tinted from whatever sits underneath. */
+  --bevel-hi: color-mix(in srgb, var(--surface) 30%, white);
+  --bevel-lo: color-mix(in srgb, var(--surface) 35%, black);
+  --shadow-card: 2px 2px 0 rgb(0 0 0 / 0.55);
+}
+
+/* A tiled 1996 homepage behind it all: a soft checker of the board's colours. */
+[data-skin="retro"] body {
+  background-image: conic-gradient(
+    color-mix(in srgb, var(--brass) 14%, var(--canvas)) 25%,
+    var(--canvas) 0 50%,
+    color-mix(in srgb, var(--felt) 10%, var(--canvas)) 0 75%,
+    var(--canvas) 0
+  );
+  background-size: 28px 28px;
+}
+/* A faint CRT, laid over the screen and never in the way of a tap. */
+[data-skin="retro"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgb(0 0 0 / 0.05) 0 1px,
+    transparent 1px 3px
+  );
+}
+
+[data-skin="retro"] .font-\[family-name\:var\(--font-display\)\] {
+  letter-spacing: 0.02em;
+}
+/* WordArt-ish: the heading stacked on two offset copies of itself. */
+[data-skin="retro"] main h1.font-\[family-name\:var\(--font-display\)\] {
+  text-shadow:
+    2px 2px 0 var(--brass),
+    4px 4px 0 color-mix(in srgb, var(--felt) 80%, transparent);
+}
+/* Numbers in pixel capitals run too wide; scores get the terminal face. */
+[data-skin="retro"] .font-\[family-name\:var\(--font-display\)\].tabular-nums {
+  font-family: var(--font-digits);
+  font-weight: 400;
+  letter-spacing: 0;
+  /* VT323 sits small on its body; scale it up to the size the class set. */
+  font-size-adjust: 0.62;
+}
+[data-skin="retro"] .eyebrow {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
+/* Header and tab rail: a title bar, the gradient every window used to have. */
+[data-skin="retro"] .wood-chrome,
+[data-skin="retro"] .wood {
+  background-color: var(--felt-deep);
+  background-image: linear-gradient(
+    90deg,
+    var(--felt-deep),
+    color-mix(in srgb, var(--felt) 85%, white) 70%,
+    var(--felt)
+  );
+  text-shadow: 1px 1px 0 rgb(0 0 0 / 0.6);
+}
+[data-skin="retro"] header.wood-chrome,
+[data-skin="retro"] header.wood {
+  border-bottom: 3px solid;
+  border-color: var(--bevel-lo);
+  box-shadow: inset 0 2px 0 rgb(255 255 255 / 0.35);
+}
+@media (max-width: 47.99rem) {
+  [data-skin="retro"] nav.wood-chrome {
+    background-image: linear-gradient(var(--felt), var(--felt-deep));
+    border-top: 3px solid var(--bevel-hi);
+  }
+}
+@media (min-width: 48rem) {
+  [data-skin="retro"] nav.wood-chrome {
+    background: none;
+  }
+}
+[data-skin="retro"] nav.wood-chrome a[aria-current="page"] > span:first-child {
+  border-radius: 0;
+  background: var(--brass);
+  color: var(--on-brass);
+  text-shadow: none;
+  box-shadow:
+    inset 2px 2px 0 rgb(0 0 0 / 0.45),
+    inset -2px -2px 0 rgb(255 255 255 / 0.45);
+}
+@media (min-width: 48rem) {
+  [data-skin="retro"] nav.wood-chrome a[aria-current="page"] > span:first-child {
+    background: none;
+    color: inherit;
+    box-shadow: none;
+  }
+}
+
+/* Cards: raised window panels. */
+[data-skin="retro"] .border {
+  border-width: 2px;
+  border-style: solid;
+  border-color: var(--bevel-hi) var(--bevel-lo) var(--bevel-lo) var(--bevel-hi);
+}
+[data-skin="retro"] .rounded-\[var\(--radius-card\)\].border {
+  box-shadow: 2px 2px 0 rgb(0 0 0 / 0.55);
+}
+
+/* Buttons: raised bevels that sink when pressed. */
+[data-skin="retro"] .btn {
+  border: 2px solid;
+  border-color: rgb(255 255 255 / 0.75) rgb(0 0 0 / 0.6) rgb(0 0 0 / 0.6) rgb(255 255 255 / 0.75);
+  box-shadow: 2px 2px 0 rgb(0 0 0 / 0.5);
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+[data-skin="retro"] .btn:active {
+  border-color: rgb(0 0 0 / 0.6) rgb(255 255 255 / 0.75) rgb(255 255 255 / 0.75) rgb(0 0 0 / 0.6);
+  box-shadow: none;
+  transform: translate(1px, 1px);
+}
+[data-skin="retro"] .btn-secondary {
+  background: var(--surface-2);
+}
+[data-skin="retro"] .btn-ghost {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* The tray: a sunken panel over a dithered felt. */
+[data-skin="retro"] .felt {
+  background-image:
+    var(--felt-pattern, linear-gradient(transparent, transparent)),
+    repeating-conic-gradient(
+      color-mix(in srgb, var(--felt-deep) 45%, transparent) 0 25%,
+      transparent 0 50%
+    );
+  background-size: auto, 4px 4px;
+  border: 3px solid;
+  border-color: rgb(0 0 0 / 0.55) rgb(255 255 255 / 0.55) rgb(255 255 255 / 0.55) rgb(0 0 0 / 0.55);
+  box-shadow: none;
+}
+[data-skin="retro"] .tray[data-shut="true"] {
+  border-color: var(--shut);
+  box-shadow: 0 0 0 3px var(--shut), 0 0 24px var(--shut);
+}
+
+/* Tiles: chunky bevelled keys with a terminal numeral; down, they sink and empty. */
+[data-skin="retro"] .tile-face {
+  background-image: linear-gradient(
+    180deg,
+    var(--wood-light),
+    color-mix(in srgb, var(--wood-light) 70%, var(--wood))
+  );
+  border: 3px solid;
+  border-color:
+    color-mix(in srgb, var(--wood-light) 30%, white)
+    color-mix(in srgb, var(--wood-dark) 55%, black)
+    color-mix(in srgb, var(--wood-dark) 55%, black)
+    color-mix(in srgb, var(--wood-light) 30%, white);
+  box-shadow: 2px 2px 0 rgb(0 0 0 / 0.45);
+  font-family: var(--font-digits);
+  font-weight: 400;
+  font-size: clamp(1.9rem, 6.5vw, 2.6rem);
+  line-height: 1;
+}
+[data-skin="retro"] .tile-face::before {
+  display: none;
+}
+[data-skin="retro"] .tile[data-down="true"] .tile-face {
+  transform: none;
+  filter: none;
+  background-image: none;
+  background-color: color-mix(in srgb, var(--felt-deep) 70%, black);
+  border-color:
+    rgb(0 0 0 / 0.6)
+    rgb(255 255 255 / 0.35)
+    rgb(255 255 255 / 0.35)
+    rgb(0 0 0 / 0.6);
+  box-shadow: none;
+}
+[data-skin="retro"] .tile[data-down="true"] .tile-face > * {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-skin="retro"] body::after {
+    display: none;
   }
 }

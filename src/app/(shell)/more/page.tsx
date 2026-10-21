@@ -8,6 +8,7 @@ import { buttonClass } from "@/components/ui/button";
 import { getIdentity } from "@/lib/auth";
 import { stockholmToday } from "@/lib/dates";
 import { MODE_COOKIE, THEME_COOKIE, parseMode, parseTheme } from "@/lib/theme";
+import { SKIN_COOKIE, parseSkin } from "@/lib/skins";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export default async function MorePage() {
   const jar = await cookies();
   const theme = parseTheme(jar.get(THEME_COOKIE)?.value);
   const mode = parseMode(jar.get(MODE_COOKIE)?.value);
+  const skin = parseSkin(jar.get(SKIN_COOKIE)?.value);
   const player = await getIdentity();
   const thisMonth = stockholmToday().slice(0, 7);
 
@@ -86,7 +88,7 @@ export default async function MorePage() {
         ))}
       </nav>
 
-      <AppearanceControls initialTheme={theme} initialMode={mode} />
+      <AppearanceControls initialTheme={theme} initialMode={mode} initialSkin={skin} />
 
       <SoundSetting />
 

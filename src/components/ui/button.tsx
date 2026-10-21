@@ -25,6 +25,8 @@ const SIZES: Record<Size, string> = {
 
 export function buttonClass(variant: Variant = "primary", size: Size = "md") {
   return [
+    // btn / btn-<variant> are hooks for the skins in globals.css.
+    `btn btn-${variant}`,
     "inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)]",
     "font-semibold transition-all duration-[var(--duration-fast)]",
     "active:scale-[.97] disabled:pointer-events-none disabled:opacity-40",
