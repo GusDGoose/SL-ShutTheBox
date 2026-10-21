@@ -1,12 +1,12 @@
 "use client";
 
-import confetti from "canvas-confetti";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useSfx } from "@/components/ui/audio-provider";
 import { useToast } from "@/components/ui/toast";
 import { AnthemStage, type Anthem } from "@/components/game/anthem-stage";
 import type { ClipSource } from "@/lib/audio/clip-source";
+import { burst } from "@/lib/confetti";
 
 export type CelebrationWinner = {
   playerId: string;
@@ -24,18 +24,6 @@ export type EarnedBadge = {
   emoji: string;
   description: string;
 };
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-}
-
-function burst(origin: { x: number; y: number }) {
-  if (prefersReducedMotion()) return;
-  confetti({ particleCount: 120, spread: 75, origin });
-}
 
 export function Celebration({
   winners,

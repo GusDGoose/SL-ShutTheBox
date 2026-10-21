@@ -33,10 +33,29 @@ export const SFX_NAMES = Object.keys(SFX_DURATIONS) as SfxName[];
 
 const MASTER_GAIN = 0.6;
 
+/**
+ * How long a sound may wait on a context that is still waking up. A tap on an
+ * iPhone resumes the context and asks for its clack in the same handler; the
+ * resume lands a few milliseconds later and the clack should still play. A
+ * sound that would arrive later than this belongs to a moment that has passed.
+ */
+const LATE_MS = 400;
+
 type Ctx = AudioContext;
 
+/** Builds one sound into `out`, starting at `at` on the context's clock. */
+export type SfxBuilder = (ctx: Ctx, out: AudioNode, at: number) => void;
+
+/** A season's sounds: whichever it leaves out stay the classic ones. */
+export type SfxPack = Partial<Record<SfxName, SfxBuilder>>;
+
+/** Frequency of a MIDI note number (60 = middle C). */
+export function midi(note: number): number {
+  return 440 * 2 ** ((note - 69) / 12);
+}
+
 /** A short burst of noise, shaped by a filter and an exponential decay. */
-function noiseBurst(
+export function noiseBurst(
   ctx: Ctx,
   out: AudioNode,
   at: number,
@@ -77,7 +96,7 @@ function noiseBurst(
 }
 
 /** A short pitched tone. */
-function tone(
+export function tone(
   ctx: Ctx,
   out: AudioNode,
   at: number,
@@ -87,12 +106,21 @@ function tone(
     gain,
     type = "triangle",
     endFrequency,
+    attack,
+    vibrato,
+    lowpass,
   }: {
     frequency: number;
     duration: number;
     gain: number;
     type?: OscillatorType;
     endFrequency?: number;
+    /** Seconds to swell in; a bowed or sung note is slower than a struck one. */
+    attack?: number;
+    /** Wobble the pitch: a fiddle, a choir, a theremin. */
+    vibrato?: { rate: number; depth: number };
+    /** Round off a buzzy waveform (organ, horn, accordion). */
+    lowpass?: number;
   },
 ) {
   const osc = ctx.createOscillator();
@@ -102,18 +130,135 @@ function tone(
     osc.frequency.exponentialRampToValueAtTime(endFrequency, at + duration);
   }
 
+  if (vibrato) {
+    const lfo = ctx.createOscillator();
+    lfo.type = "sine";
+    lfo.frequency.setValueAtTime(vibrato.rate, at);
+    const depth = ctx.createGain();
+    depth.gain.setValueAtTime(vibrato.depth, at);
+    lfo.connect(depth).connect(osc.frequency);
+    lfo.start(at);
+    lfo.stop(at + duration);
+  }
+
   const env = ctx.createGain();
   // A tiny attack, otherwise the start of the tone clicks.
   env.gain.setValueAtTime(0.0001, at);
-  env.gain.exponentialRampToValueAtTime(gain, at + Math.min(0.01, duration / 4));
+  env.gain.exponentialRampToValueAtTime(
+    gain,
+    at + Math.min(attack ?? 0.01, duration / 2),
+  );
   env.gain.exponentialRampToValueAtTime(0.0001, at + duration);
 
-  osc.connect(env).connect(out);
+  if (lowpass !== undefined) {
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = lowpass;
+    osc.connect(filter).connect(env).connect(out);
+  } else {
+    osc.connect(env).connect(out);
+  }
   osc.start(at);
   osc.stop(at + duration);
 }
 
-const BUILDERS: Record<SfxName, (ctx: Ctx, out: AudioNode, at: number) => void> =
+/**
+ * A struck bell: a handful of inharmonic partials that die away at different
+ * rates. Sleigh bells, church bells, a glass being clinked, a tea-light chime.
+ */
+export function bell(
+  ctx: Ctx,
+  out: AudioNode,
+  at: number,
+  { frequency, duration, gain }: { frequency: number; duration: number; gain: number },
+) {
+  const partials: [ratio: number, level: number, decay: number][] = [
+    [1, 1, 1],
+    [2.76, 0.45, 0.6],
+    [5.4, 0.25, 0.35],
+    [8.93, 0.12, 0.2],
+  ];
+  for (const [ratio, level, decay] of partials) {
+    tone(ctx, out, at, {
+      frequency: frequency * ratio,
+      duration: Math.max(0.04, duration * decay),
+      gain: gain * level,
+      type: "sine",
+    });
+  }
+}
+
+/**
+ * A plucked string by Karplus-Strong: a burst of noise fed round a short delay
+ * line that averages itself smooth. Harp, fiddle pizzicato, a guitar at
+ * midsommar — far more alive than any oscillator.
+ */
+export function pluck(
+  ctx: Ctx,
+  out: AudioNode,
+  at: number,
+  {
+    frequency,
+    duration,
+    gain,
+    damping = 0.996,
+  }: { frequency: number; duration: number; gain: number; damping?: number },
+) {
+  const frames = Math.max(1, Math.floor(ctx.sampleRate * duration));
+  const period = Math.max(2, Math.round(ctx.sampleRate / frequency));
+  const buffer = ctx.createBuffer(1, frames, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  const ring = new Float32Array(period);
+  for (let i = 0; i < period; i++) ring[i] = Math.random() * 2 - 1;
+  for (let i = 0; i < frames; i++) {
+    const j = i % period;
+    const next = ring[(j + 1) % period];
+    data[i] = ring[j];
+    ring[j] = ((ring[j] + next) / 2) * damping;
+  }
+
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(gain, at);
+  env.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+  source.connect(env).connect(out);
+  source.start(at);
+  source.stop(at + duration);
+}
+
+/** A run of notes: [midi note, seconds] pairs, played by `voice`. */
+export function melody(
+  notes: [note: number, length: number][],
+  at: number,
+  voice: (frequency: number, at: number, length: number) => void,
+): number {
+  let t = at;
+  for (const [note, length] of notes) {
+    if (note > 0) voice(midi(note), t, length);
+    t += length;
+  }
+  return t;
+}
+
+/** Fire, a sparkler, a firework's tail: a scatter of tiny random clicks. */
+export function crackle(
+  ctx: Ctx,
+  out: AudioNode,
+  at: number,
+  { duration, count, gain }: { duration: number; count: number; gain: number },
+) {
+  for (let i = 0; i < count; i++) {
+    noiseBurst(ctx, out, at + Math.random() * duration, {
+      duration: 0.008 + Math.random() * 0.02,
+      cutoff: 2500 + Math.random() * 4000,
+      gain: gain * (0.4 + Math.random() * 0.6),
+      type: "highpass",
+    });
+  }
+}
+
+const BUILDERS: Record<SfxName, SfxBuilder> =
   {
     // Tile slapping down onto the tray: wooden knock plus a low thump.
     tileDown: (ctx, out, at) => {
@@ -181,7 +326,8 @@ const BUILDERS: Record<SfxName, (ctx: Ctx, out: AudioNode, at: number) => void> 
   };
 
 export type SfxPlayer = {
-  play: (name: SfxName) => void;
+  /** Plays a sound, in the given board's voice when it has one. */
+  play: (name: SfxName, theme?: string) => void;
   /** Resume after the tab was backgrounded, or after the first user gesture. */
   resume: () => Promise<void>;
   close: () => void;
@@ -198,17 +344,41 @@ export type SfxPlayer = {
  * Creates a player over an AudioContext. Nothing makes a sound until the first
  * user gesture, which is a browser rule and also good manners on a shared desk.
  */
-export function createSfxPlayer(ctx: Ctx): SfxPlayer {
+export function createSfxPlayer(
+  ctx: Ctx,
+  packs: Partial<Record<string, SfxPack>> = {},
+): SfxPlayer {
   const master = ctx.createGain();
   master.gain.value = MASTER_GAIN;
   master.connect(ctx.destination);
 
   return {
-    play(name) {
-      // A suspended context would queue everything up and fire it all at once
-      // when it resumes.
-      if (ctx.state !== "running") return;
-      BUILDERS[name](ctx, master, ctx.currentTime);
+    play(name, theme) {
+      const build = (theme ? packs[theme]?.[name] : undefined) ?? BUILDERS[name];
+      if (ctx.state === "running") {
+        build(ctx, master, ctx.currentTime);
+        return;
+      }
+      if (ctx.state === "closed") return;
+
+      // [concept: wake, then play] iOS Safari suspends the context whenever
+      // it likes — after a call, a lock, a trip to another app — and only lets
+      // it resume inside a tap. Most sounds are asked for inside a tap, so
+      // that is exactly the moment to wake it. The sound plays once the
+      // context is running, unless it took so long the moment has passed: a
+      // queue of stale clacks all firing at once is worse than silence.
+      const asked = Date.now();
+      ctx.resume().then(
+        () => {
+          if (
+            (ctx.state as AudioContextState) === "running" &&
+            Date.now() - asked <= LATE_MS
+          ) {
+            build(ctx, master, ctx.currentTime);
+          }
+        },
+        () => undefined,
+      );
     },
     async resume() {
       if (ctx.state !== "running") await ctx.resume();

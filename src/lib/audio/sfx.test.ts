@@ -5,6 +5,8 @@ import {
   SFX_NAMES,
   type SfxName,
 } from "@/lib/audio/sfx";
+import { SFX_PACKS } from "@/lib/audio/sfx-packs";
+import { SEASONS } from "@/lib/seasons";
 
 /**
  * A stand-in for AudioContext that records the graph instead of making sound.
@@ -31,9 +33,10 @@ function mockContext(state: AudioContextState = "running") {
     value: 0,
     setValueAtTime: vi.fn(),
     exponentialRampToValueAtTime: vi.fn(),
+    linearRampToValueAtTime: vi.fn(),
   });
 
-  const ctx = {
+  const ctx: { state: AudioContextState; [key: string]: unknown } = {
     state,
     currentTime: 0,
     sampleRate: 48000,
@@ -60,7 +63,9 @@ function mockContext(state: AudioContextState = "running") {
     createBuffer: vi.fn((_ch: number, frames: number) => ({
       getChannelData: () => new Float32Array(frames),
     })),
-    resume: vi.fn(async () => {}),
+    resume: vi.fn(async () => {
+      ctx.state = "running";
+    }),
     close: vi.fn(async () => {}),
   };
 
@@ -109,9 +114,54 @@ describe("createSfxPlayer", () => {
   // Otherwise a suspended context queues the whole game up and fires it all at
   // once the moment it resumes.
   it("schedules nothing while the context is suspended", () => {
-    const { ctx, started } = mockContext("suspended");
+    const { ctx, started, raw } = mockContext("suspended");
+    raw.resume = vi.fn(async () => {}); // a resume the browser refuses
     createSfxPlayer(ctx).play("shut");
     expect(started).toEqual([]);
+  });
+
+  // The iPhone case: the tap that asks for the clack is also the tap that
+  // wakes the context, and the clack should not be lost to the race.
+  it("wakes a suspended context and then plays", async () => {
+    const { ctx, started, raw } = mockContext("suspended");
+    createSfxPlayer(ctx).play("tileDown");
+    expect(raw.resume).toHaveBeenCalled();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(started.length).toBeGreaterThan(0);
+  });
+
+  it("drops a sound whose wake-up came too late", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ctx, started, raw } = mockContext("suspended");
+      let wake!: () => void;
+      raw.resume = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            wake = () => {
+              raw.state = "running";
+              resolve();
+            };
+          }),
+      );
+      createSfxPlayer(ctx).play("fanfare");
+      vi.advanceTimersByTime(2000);
+      wake();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(started).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("plays a season's own sound when the board has one", () => {
+    const classic = mockContext("running");
+    createSfxPlayer(classic.ctx, SFX_PACKS).play("fanfare", "oak");
+    const christmas = mockContext("running");
+    createSfxPlayer(christmas.ctx, SFX_PACKS).play("fanfare", "christmas");
+    expect(christmas.started.length).not.toBe(classic.started.length);
   });
 
   it("resumes a suspended context but leaves a running one alone", async () => {
@@ -122,5 +172,24 @@ describe("createSfxPlayer", () => {
     const running = mockContext("running");
     await createSfxPlayer(running.ctx).resume();
     expect(running.raw.resume).not.toHaveBeenCalled();
+  });
+});
+
+describe("seasonal sound packs", () => {
+  it("builds a graph for every sound in every season", () => {
+    for (const season of SEASONS) {
+      for (const name of SFX_NAMES) {
+        const { ctx, started } = mockContext("running");
+        createSfxPlayer(ctx, SFX_PACKS).play(name, season);
+        expect(started.length, `${season}/${name}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("gives every season at least a fanfare or a clack of its own", () => {
+    for (const season of SEASONS) {
+      const pack = SFX_PACKS[season];
+      expect(Object.keys(pack).length, season).toBeGreaterThan(0);
+    }
   });
 });

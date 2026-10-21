@@ -131,7 +131,7 @@ export function PlayerCard({
                     key={i}
                     title={`${ordinal(f.position)} of ${f.of}`}
                     className={`flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-bold tabular-nums ${
-                      f.won ? "bg-brass text-ink" : "bg-surface-2 text-ink"
+                      f.won ? "bg-brass text-on-brass" : "bg-surface-2 text-ink"
                     }`}
                   >
                     <span aria-hidden>{f.won ? "👑" : f.position}</span>
