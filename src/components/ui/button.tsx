@@ -11,7 +11,7 @@ type Size = "md" | "lg";
 // one place — brass hardware on wood.
 const VARIANTS: Record<Variant, string> = {
   primary:
-    "bg-brass text-ink shadow-[var(--shadow-card)] hover:brightness-105 active:brightness-95",
+    "bg-brass text-on-brass shadow-[var(--shadow-card)] hover:brightness-105 active:brightness-95",
   secondary:
     "border border-wood-dark/40 text-ink hover:bg-surface-2 active:bg-surface-2",
   ghost: "text-ink-muted hover:text-ink hover:bg-surface-2",

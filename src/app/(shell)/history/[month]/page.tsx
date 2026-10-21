@@ -163,7 +163,7 @@ export default async function HistoryMonthPage({
               aria-current={m === month ? "page" : undefined}
               className={`inline-flex min-h-9 items-center rounded-full px-3 text-sm font-semibold ${
                 m === month
-                  ? "bg-brass text-ink"
+                  ? "bg-brass text-on-brass"
                   : "border border-line text-ink-muted hover:bg-surface-2 hover:text-ink"
               }`}
             >

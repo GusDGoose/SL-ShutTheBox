@@ -37,6 +37,8 @@ export function SoundSetting() {
           </label>
           <p className="mt-1 text-xs text-ink-muted">
             This device only — one game should not be six clacking phones.
+            Seasonal boards bring their own sounds: sleigh bells, the ferry&rsquo;s
+            horn, a haunted organ.
           </p>
         </div>
         <button

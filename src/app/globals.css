@@ -34,6 +34,16 @@
   --danger: #b4432f;
   --streak: #d9782b;
   --shadow-rgb: 43 31 23;
+  /* Text on a brass fill. Always dark: brass stays bright at night too, and
+     the lamp-lit ink is pale, so text-ink on a brass button used to all but
+     vanish in dark mode. */
+  --on-brass: #2b1f17;
+  /* [concept: the grain has to reach the tiles] .tile-face paints with
+     var(--grain), but the grain used to be defined only on .wood and
+     .wood-chrome — and the tiles sit on the felt, outside both. An undefined
+     var() voids the whole background-image, so every tile lost its wood
+     gradient and showed the felt through. Defined here, it reaches them. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9 0.02' numOctaves='3' seed='7'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.16'/%3E%3C/svg%3E");
   color-scheme: light;
 }
 
@@ -101,6 +111,7 @@
 /* Wildcard. Always night — the mode toggle is disabled while it's selected. */
 [data-theme="neon"],
 [data-theme="neon"][data-mode="dark"] {
+  --on-brass: #1a1208;
   --canvas: #0b0b14;
   --surface: #14142a;
   --surface-2: #1c1b38;
@@ -122,6 +133,562 @@
   color-scheme: dark;
 }
 
+
+/* ---------------------------------------------------------------------------
+   The seasonal boards (src/lib/seasons.ts decides which one is on today).
+   Same rule as the classics: wood, felt and hardware only, each with its
+   lamp-lit twin. Halloween and New Year's Eve are night-only, like neon, and
+   repaint the surfaces too. Every pair was contrast-checked before it landed
+   here: ivory on the header chrome and the felt, brass-ink on the cards. */
+[data-theme="frost"] {
+  --canvas: #eef3f6;
+  --felt: #2a5d7a;
+  --felt-deep: #1b4058;
+  --wood: #c9d6df;
+  --wood-light: #eef4f8;
+  --wood-dark: #8ea3b3;
+  --brass: #a9b8c6;
+  --brass-ink: #3f5566;
+}
+[data-theme="frost"][data-mode="dark"] {
+  --canvas: #050d12;
+  --felt: #20465c;
+  --felt-deep: #122a39;
+  --wood: #a1abb2;
+  --wood-light: #bec3c6;
+  --wood-dark: #5c6a74;
+  --brass: #a9b8c6;
+  --brass-ink: #c3cdd7;
+}
+[data-theme="valentine"] {
+  --canvas: #fbf0f0;
+  --felt: #8a2244;
+  --felt-deep: #62162f;
+  --wood: #e2a99c;
+  --wood-light: #f6d3ca;
+  --wood-dark: #a96d62;
+  --brass: #d4a24c;
+  --brass-ink: #8a3a50;
+}
+[data-theme="valentine"][data-mode="dark"] {
+  --canvas: #140409;
+  --felt: #681a33;
+  --felt-deep: #400e1f;
+  --wood: #b5877d;
+  --wood-light: #c5a9a2;
+  --wood-dark: #6e4740;
+  --brass: #d4a24c;
+  --brass-ink: #e1be82;
+}
+[data-theme="semla"] {
+  --canvas: #f8f1e6;
+  --felt: #6e4a2e;
+  --felt-deep: #4a311d;
+  --wood: #e2cba3;
+  --wood-light: #fbf1de;
+  --wood-dark: #ad8c5e;
+  --brass: #c49a5c;
+  --brass-ink: #6e4a1e;
+}
+[data-theme="semla"][data-mode="dark"] {
+  --canvas: #0f0a06;
+  --felt: #533823;
+  --felt-deep: #302013;
+  --wood: #b5a282;
+  --wood-light: #c9c1b2;
+  --wood-dark: #705b3d;
+  --brass: #c49a5c;
+  --brass-ink: #d6b88d;
+}
+[data-theme="spring"] {
+  --canvas: #f2f4ea;
+  --felt: #3a7035;
+  --felt-deep: #2b5a28;
+  --wood: #d9c8a4;
+  --wood-light: #f2e8d0;
+  --wood-dark: #a08c66;
+  --brass: #c27a4a;
+  --brass-ink: #8a4a20;
+}
+[data-theme="spring"][data-mode="dark"] {
+  --canvas: #091208;
+  --felt: #2c5428;
+  --felt-deep: #1c3b1a;
+  --wood: #aea083;
+  --wood-light: #c2baa6;
+  --wood-dark: #685b42;
+  --brass: #c27a4a;
+  --brass-ink: #d4a280;
+}
+[data-theme="easter"] {
+  --canvas: #fbf6e4;
+  --felt: #5a3e8a;
+  --felt-deep: #3e2a66;
+  --wood: #ebcb62;
+  --wood-light: #fbe9a8;
+  --wood-dark: #b8952e;
+  --brass: #e0a020;
+  --brass-ink: #7a5508;
+}
+[data-theme="easter"][data-mode="dark"] {
+  --canvas: #0c0814;
+  --felt: #442f68;
+  --felt-deep: #281b42;
+  --wood: #bca24e;
+  --wood-light: #c9ba86;
+  --wood-dark: #78611e;
+  --brass: #e0a020;
+  --brass-ink: #e9bd63;
+}
+[data-theme="tulip"] {
+  --canvas: #f8eef0;
+  --felt: #2f6a3e;
+  --felt-deep: #1f4a2b;
+  --wood: #e993a6;
+  --wood-light: #f9cdd6;
+  --wood-dark: #b56276;
+  --brass: #f07a93;
+  --brass-ink: #a02a48;
+}
+[data-theme="tulip"][data-mode="dark"] {
+  --canvas: #060f09;
+  --felt: #23502f;
+  --felt-deep: #14301c;
+  --wood: #ba7685;
+  --wood-light: #c7a4ab;
+  --wood-dark: #76404d;
+  --brass: #f07a93;
+  --brass-ink: #e4859a;
+}
+[data-theme="valborg"] {
+  --canvas: #f3ece6;
+  --felt: #2b2a52;
+  --felt-deep: #1c1b3a;
+  --wood: #a77a52;
+  --wood-light: #c99a6c;
+  --wood-dark: #5a3a22;
+  --brass: #f07a2a;
+  --brass-ink: #a84a10;
+}
+[data-theme="valborg"][data-mode="dark"] {
+  --canvas: #06050c;
+  --felt: #20203e;
+  --felt-deep: #121226;
+  --wood: #866242;
+  --wood-light: #a17b56;
+  --wood-dark: #3b2616;
+  --brass: #f07a2a;
+  --brass-ink: #f5a26a;
+}
+[data-theme="bloom"] {
+  --canvas: #f5f1f8;
+  --felt: #5e4b8b;
+  --felt-deep: #43356a;
+  --wood: #d6bb90;
+  --wood-light: #eedcb8;
+  --wood-dark: #a2845a;
+  --brass: #b98bd6;
+  --brass-ink: #6a3f8a;
+}
+[data-theme="bloom"][data-mode="dark"] {
+  --canvas: #0d0b15;
+  --felt: #473868;
+  --felt-deep: #2c2245;
+  --wood: #ab9673;
+  --wood-light: #beb093;
+  --wood-dark: #69563b;
+  --brass: #b98bd6;
+  --brass-ink: #ceaee2;
+}
+[data-theme="nationalday"] {
+  --canvas: #eef4fa;
+  --felt: #005b99;
+  --felt-deep: #00406e;
+  --wood: #f5c400;
+  --wood-light: #ffe066;
+  --wood-dark: #b38f00;
+  --brass: #fecc02;
+  --brass-ink: #00507f;
+}
+[data-theme="nationalday"][data-mode="dark"] {
+  --canvas: #000d16;
+  --felt: #004473;
+  --felt-deep: #002a48;
+  --wood: #c49d00;
+  --wood-light: #ccb352;
+  --wood-dark: #745d00;
+  --brass: #fecc02;
+  --brass-ink: #fedb4e;
+}
+[data-theme="midsommar"] {
+  --canvas: #f4f6ec;
+  --felt: #3a6e2e;
+  --felt-deep: #27511f;
+  --wood: #e2d5b0;
+  --wood-light: #f7f0dc;
+  --wood-dark: #ab9b72;
+  --brass: #e86fa0;
+  --brass-ink: #a3305f;
+}
+[data-theme="midsommar"][data-mode="dark"] {
+  --canvas: #081006;
+  --felt: #2c5323;
+  --felt-deep: #193514;
+  --wood: #b5aa8d;
+  --wood-light: #c6c0b0;
+  --wood-dark: #6f654a;
+  --brass: #e86fa0;
+  --brass-ink: #ef9abd;
+}
+[data-theme="summer"] {
+  --canvas: #eef4f6;
+  --felt: #1c5f8c;
+  --felt-deep: #124566;
+  --wood: #c9a477;
+  --wood-light: #e2c497;
+  --wood-dark: #8f6a40;
+  --brass: #c9973a;
+  --brass-ink: #7a5518;
+}
+[data-theme="summer"][data-mode="dark"] {
+  --canvas: #040e14;
+  --felt: #154769;
+  --felt-deep: #0c2d42;
+  --wood: #a1835f;
+  --wood-light: #b59d79;
+  --wood-dark: #5d452a;
+  --brass: #c9973a;
+  --brass-ink: #d9b675;
+}
+[data-theme="kraftskiva"] {
+  --canvas: #f6efe6;
+  --felt: #1f2d5a;
+  --felt-deep: #141e40;
+  --wood: #d4553a;
+  --wood-light: #ec7f5f;
+  --wood-dark: #8f2e1c;
+  --brass: #e6b93a;
+  --brass-ink: #8a6a10;
+}
+[data-theme="kraftskiva"][data-mode="dark"] {
+  --canvas: #04060d;
+  --felt: #172244;
+  --felt-deep: #0d142a;
+  --wood: #aa442e;
+  --wood-light: #bd664c;
+  --wood-dark: #5d1e12;
+  --brass: #e6b93a;
+  --brass-ink: #eece75;
+}
+[data-theme="harvest"] {
+  --canvas: #f6efe2;
+  --felt: #7a1f2e;
+  --felt-deep: #561420;
+  --wood: #d1a04a;
+  --wood-light: #e6bf6e;
+  --wood-dark: #96702c;
+  --brass: #d9893f;
+  --brass-ink: #8a4a1a;
+}
+[data-theme="harvest"][data-mode="dark"] {
+  --canvas: #110406;
+  --felt: #5c1723;
+  --felt-deep: #380d15;
+  --wood: #a7803b;
+  --wood-light: #b89958;
+  --wood-dark: #62491d;
+  --brass: #d9893f;
+  --brass-ink: #cb936a;
+}
+[data-theme="autumn"] {
+  --canvas: #f5ece2;
+  --felt: #8a3e1c;
+  --felt-deep: #632a12;
+  --wood: #b07a40;
+  --wood-light: #cf9a5c;
+  --wood-dark: #7a4f22;
+  --brass: #d98a2b;
+  --brass-ink: #8a5210;
+}
+[data-theme="autumn"][data-mode="dark"] {
+  --canvas: #140804;
+  --felt: #682f15;
+  --felt-deep: #401b0c;
+  --wood: #8d6233;
+  --wood-light: #a67b4a;
+  --wood-dark: #4f3316;
+  --brass: #d98a2b;
+  --brass-ink: #e4ad6b;
+}
+[data-theme="candlelight"] {
+  --canvas: #f4ece6;
+  --felt: #4a2342;
+  --felt-deep: #33172d;
+  --wood: #b78a5e;
+  --wood-light: #d4a87a;
+  --wood-dark: #7c5634;
+  --brass: #e3a83a;
+  --brass-ink: #7f5a12;
+}
+[data-theme="candlelight"][data-mode="dark"] {
+  --canvas: #0a0509;
+  --felt: #381a32;
+  --felt-deep: #210f1d;
+  --wood: #926e4b;
+  --wood-light: #aa8662;
+  --wood-dark: #513822;
+  --brass: #e3a83a;
+  --brass-ink: #ebc275;
+}
+[data-theme="christmas"] {
+  --canvas: #f6eee4;
+  --felt: #8e1b1b;
+  --felt-deep: #5e1010;
+  --wood: #a8642c;
+  --wood-light: #c98a4e;
+  --wood-dark: #6a3a14;
+  --brass: #d4a72c;
+  --brass-ink: #7a5a10;
+}
+[data-theme="christmas"][data-mode="dark"] {
+  --canvas: #130303;
+  --felt: #6b1414;
+  --felt-deep: #3d0a0a;
+  --wood: #865023;
+  --wood-light: #a16e3e;
+  --wood-dark: #45260d;
+  --brass: #d4a72c;
+  --brass-ink: #e1c16b;
+}
+[data-theme="lucia"] {
+  --canvas: #f7f4ec;
+  --felt: #1b2a4a;
+  --felt-deep: #111c33;
+  --wood: #e6cf8e;
+  --wood-light: #f8ecc4;
+  --wood-dark: #b39a52;
+  --brass: #e8b23a;
+  --brass-ink: #7a5a10;
+}
+[data-theme="lucia"][data-mode="dark"] {
+  --canvas: #03060a;
+  --felt: #142038;
+  --felt-deep: #0b1221;
+  --wood: #b8a672;
+  --wood-light: #c6bd9d;
+  --wood-dark: #746435;
+  --brass: #e8b23a;
+  --brass-ink: #efc975;
+}
+[data-theme="halloween"],
+[data-theme="halloween"][data-mode="dark"] {
+  --on-brass: #1a1208;
+  --canvas: #0e0a12;
+  --surface: #1a1320;
+  --surface-2: #251a2e;
+  --ink: #f6ecff;
+  --ink-muted: #b9a6c9;
+  --felt: #2a1238;
+  --felt-deep: #1a0a24;
+  --wood: #4a2a18;
+  --wood-light: #6e4024;
+  --wood-dark: #24130a;
+  --brass: #ff7a1a;
+  --brass-ink: #ffa154;
+  --ivory: #ffd9a8;
+  --shut: #9cff57;
+  --shut-ink: #9cff57;
+  --danger: #ff6b6b;
+  --streak: #ffb347;
+  --shadow-rgb: 255 122 26;
+  color-scheme: dark;
+}
+[data-theme="newyear"],
+[data-theme="newyear"][data-mode="dark"] {
+  --on-brass: #1a1208;
+  --canvas: #070b1a;
+  --surface: #0f1630;
+  --surface-2: #172042;
+  --ink: #f4f1ff;
+  --ink-muted: #a9b0d6;
+  --felt: #0c1638;
+  --felt-deep: #070d26;
+  --wood: #343a68;
+  --wood-light: #525a96;
+  --wood-dark: #1a1e3e;
+  --brass: #f2c14e;
+  --brass-ink: #f7d27a;
+  --ivory: #fff3c4;
+  --shut: #7dffcf;
+  --shut-ink: #7dffcf;
+  --danger: #ff6b6b;
+  --streak: #ffb347;
+  --shadow-rgb: 242 193 78;
+  color-scheme: dark;
+}
+
+
+/* ---------------------------------------------------------------------------
+   The flourishes. Tokens alone make a season a recolour; these make it an
+   occasion: a pattern woven into the felt, something hung under the header,
+   and a finish on the tiles. All CSS, all theme-scoped, none of it touching
+   layout, and every animation stops under reduced motion (base layer). */
+
+/* Felt patterns, layered over the nap by .felt. */
+[data-theme="christmas"] {
+  --felt-pattern: radial-gradient(circle, rgb(255 215 120 / 0.2) 0 1.4px, transparent 2px) 0 0 / 22px 22px,
+    radial-gradient(circle, rgb(255 255 255 / 0.12) 0 1px, transparent 1.6px) 11px 11px / 22px 22px;
+}
+[data-theme="lucia"],
+[data-theme="newyear"] {
+  --felt-pattern: radial-gradient(circle, rgb(255 225 140 / 0.22) 0 1.2px, transparent 1.8px) 0 0 / 18px 18px,
+    radial-gradient(circle, rgb(255 255 255 / 0.14) 0 0.8px, transparent 1.4px) 9px 9px / 18px 18px;
+}
+[data-theme="frost"] {
+  --felt-pattern: radial-gradient(circle, rgb(255 255 255 / 0.16) 0 1.2px, transparent 1.8px) 0 0 / 14px 14px;
+}
+[data-theme="valentine"] {
+  --felt-pattern: radial-gradient(circle, rgb(255 160 190 / 0.16) 0 2px, transparent 2.6px) 0 0 / 20px 20px;
+}
+[data-theme="summer"] {
+  --felt-pattern: radial-gradient(circle at 50% 100%, transparent 7px, rgb(255 255 255 / 0.08) 8px 9px, transparent 10px) 0 0 / 22px 11px;
+}
+[data-theme="nationalday"] {
+  /* Den svenska korsflaggan, woven faintly into the felt. */
+  --felt-pattern: linear-gradient(90deg, transparent 30%, rgb(254 204 2 / 0.32) 30% 40%, transparent 40%),
+    linear-gradient(transparent 42%, rgb(254 204 2 / 0.32) 42% 58%, transparent 58%);
+}
+[data-theme="midsommar"] {
+  --felt-pattern: radial-gradient(circle, rgb(255 225 77 / 0.22) 0 1.6px, transparent 2.2px) 0 0 / 26px 26px,
+    radial-gradient(circle, rgb(255 143 199 / 0.2) 0 1.6px, transparent 2.2px) 13px 13px / 26px 26px;
+}
+[data-theme="kraftskiva"] {
+  --felt-pattern: radial-gradient(circle at 80% 15%, rgb(255 236 170 / 0.18) 0 18px, transparent 26px),
+    radial-gradient(circle, rgb(255 255 255 / 0.1) 0 0.8px, transparent 1.4px) 0 0 / 16px 16px;
+}
+[data-theme="halloween"] {
+  --felt-pattern: radial-gradient(ellipse at 50% 120%, rgb(162 89 255 / 0.28), transparent 60%),
+    radial-gradient(circle, rgb(156 255 87 / 0.1) 0 1px, transparent 1.6px) 0 0 / 20px 20px;
+}
+[data-theme="valborg"] {
+  --felt-pattern: radial-gradient(ellipse at 50% 130%, rgb(255 122 26 / 0.35), transparent 60%);
+}
+[data-theme="candlelight"] {
+  --felt-pattern: radial-gradient(ellipse at 50% 50%, rgb(255 207 110 / 0.16), transparent 70%);
+}
+[data-theme="easter"],
+[data-theme="spring"],
+[data-theme="bloom"],
+[data-theme="tulip"] {
+  --felt-pattern: radial-gradient(circle, rgb(255 255 255 / 0.1) 0 1.4px, transparent 2px) 0 0 / 24px 24px;
+}
+
+/* What hangs under the header: fairy lights or bunting. */
+@layer components {
+  /* The top bar only: the tab rail is wood-chrome too, and is fixed. */
+  header.wood-chrome {
+    position: relative;
+  }
+}
+header.wood-chrome::after {
+  content: none;
+  position: absolute;
+  inset: auto 0 -9px;
+  height: 12px;
+  pointer-events: none;
+  z-index: 5;
+}
+[data-theme="christmas"] header.wood-chrome::after,
+[data-theme="lucia"] header.wood-chrome::after,
+[data-theme="newyear"] header.wood-chrome::after,
+[data-theme="candlelight"] header.wood-chrome::after {
+  content: "";
+  background:
+    radial-gradient(circle at 50% 70%, var(--light-a) 0 3px, transparent 4.5px) 0 0 / 48px 12px,
+    radial-gradient(circle at 50% 70%, var(--light-b) 0 3px, transparent 4.5px) 16px 0 / 48px 12px,
+    radial-gradient(circle at 50% 70%, var(--light-c) 0 3px, transparent 4.5px) 32px 0 / 48px 12px,
+    linear-gradient(rgb(0 0 0 / 0.55), rgb(0 0 0 / 0.55)) 0 3px / 100% 1px no-repeat;
+  filter: drop-shadow(0 0 4px var(--light-a)) drop-shadow(0 0 3px var(--light-c));
+  animation: string-lights 2.4s steps(2, jump-none) infinite;
+}
+[data-theme="christmas"] {
+  --light-a: #ff4d4d;
+  --light-b: #4dff88;
+  --light-c: #ffd84d;
+}
+[data-theme="lucia"],
+[data-theme="candlelight"] {
+  --light-a: #ffe08a;
+  --light-b: #fff6d6;
+  --light-c: #ffcf6e;
+}
+[data-theme="newyear"] {
+  --light-a: #f2c14e;
+  --light-b: #ffffff;
+  --light-c: #ff6bd6;
+}
+@keyframes string-lights {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.65;
+  }
+}
+
+[data-theme="halloween"] header.wood-chrome::after,
+[data-theme="midsommar"] header.wood-chrome::after,
+[data-theme="nationalday"] header.wood-chrome::after,
+[data-theme="kraftskiva"] header.wood-chrome::after,
+[data-theme="easter"] header.wood-chrome::after,
+[data-theme="valentine"] header.wood-chrome::after,
+[data-theme="summer"] header.wood-chrome::after {
+  content: "";
+  /* Pennants: downward triangles in two alternating colours. */
+  background:
+    conic-gradient(from -45deg at 50% 100%, var(--flag-a) 90deg, transparent 0) 0 0 / 28px 12px,
+    conic-gradient(from -45deg at 50% 100%, var(--flag-b) 90deg, transparent 0) 14px 0 / 28px 12px;
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 0.3));
+  transform-origin: top;
+  animation: bunting 3.2s ease-in-out infinite alternate;
+}
+[data-theme="halloween"] {
+  --flag-a: #ff7a1a;
+  --flag-b: #a259ff;
+}
+[data-theme="midsommar"] {
+  --flag-a: #ff8fc7;
+  --flag-b: #ffe14d;
+}
+[data-theme="nationalday"] {
+  --flag-a: #005b99;
+  --flag-b: #fecc02;
+}
+[data-theme="kraftskiva"] {
+  --flag-a: #e6452c;
+  --flag-b: #ffe066;
+}
+[data-theme="easter"] {
+  --flag-a: #ffd84d;
+  --flag-b: #b58cff;
+}
+[data-theme="valentine"] {
+  --flag-a: #ff4d7d;
+  --flag-b: #ffd1dc;
+}
+[data-theme="summer"] {
+  --flag-a: #1c8fd6;
+  --flag-b: #ffffff;
+}
+@keyframes bunting {
+  from {
+    transform: skewX(-4deg);
+  }
+  to {
+    transform: skewX(4deg);
+  }
+}
+
 @theme inline {
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -136,6 +703,7 @@
   --color-wood-dark: var(--wood-dark);
   --color-brass: var(--brass);
   --color-brass-ink: var(--brass-ink);
+  --color-on-brass: var(--on-brass);
   --color-ivory: var(--ivory);
   --color-shut: var(--shut);
   --color-shut-ink: var(--shut-ink);
@@ -224,12 +792,14 @@
 
      Mixing the theme's own wood down towards black keeps every board's
      character while guaranteeing the contrast in all four: oak 9.4:1,
-     walnut 13.5:1, birch 5.9:1, neon 16.4:1. Chrome should recede anyway —
+     walnut 13.5:1, birch 5.9:1, neon 16.4:1. The pale seasonal woods (frost,
+     midsommar, Lucia) took it from 45% wood to 40%: at 45% their resting tab
+     labels, ivory at 85%, came out at 4.4:1. Chrome should recede anyway —
      it reads as the darker frame the tray sits in. e2e/a11y.spec.ts holds
      the line. */
   .wood-chrome {
     --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9 0.02' numOctaves='3' seed='7'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.16'/%3E%3C/svg%3E");
-    background-color: color-mix(in srgb, var(--color-wood) 45%, black);
+    background-color: color-mix(in srgb, var(--color-wood) 40%, black);
     background-image: var(--grain),
       linear-gradient(
         90deg,
@@ -241,7 +811,9 @@
   .felt {
     --nap: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' seed='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
     background-color: var(--color-felt);
-    background-image: var(--nap);
+    /* A season may weave a pattern in; everything else is plain felt. */
+    background-image: var(--felt-pattern, linear-gradient(transparent, transparent)),
+      var(--nap);
     box-shadow: var(--shadow-tray);
   }
   .eyebrow {
@@ -355,6 +927,64 @@
   @media (min-width: 40rem) {
     .tile-grid {
       grid-template-columns: repeat(var(--tile-cols-wide), minmax(0, 1fr));
+    }
+  }
+}
+
+@layer components {
+  /* Tile finishes for the occasions that deserve one. */
+  [data-theme="christmas"] .tile-face::after {
+    /* Royal icing piped along the bottom of each gingerbread tile. */
+    content: "";
+    position: absolute;
+    inset: auto 0.3rem 0.18rem;
+    height: 4px;
+    background: radial-gradient(circle at 50% 0, rgb(255 255 255 / 0.9) 0 2px, transparent 2.6px) 0 0 / 6px 4px;
+  }
+  [data-theme="frost"] .tile-face {
+    box-shadow:
+      var(--shadow-tile-up),
+      inset 0 0 0 2px rgb(255 255 255 / 0.55),
+      inset 0 6px 8px -4px rgb(255 255 255 / 0.8);
+  }
+  [data-theme="halloween"] .tile-face {
+    color: #ffb070;
+    text-shadow: 0 0 8px #ff7a1a, 0 0 2px #ff7a1a;
+  }
+  [data-theme="newyear"] .tile-face {
+    color: #fff3c4;
+    text-shadow: 0 0 6px #f2c14e;
+  }
+  [data-theme="lucia"] .tile-face,
+  [data-theme="candlelight"] .tile-face {
+    text-shadow: 0 0 10px rgb(255 214 120 / 0.8);
+  }
+  [data-theme="nationalday"] .tile-face {
+    color: #00406e;
+  }
+}
+
+@layer components {
+  /* The greeting's emoji gives a little wave now and then. */
+  .season-greeting-emoji {
+    display: inline-block;
+    transform-origin: 50% 80%;
+    animation: greeting-wave 4s ease-in-out infinite;
+  }
+  @keyframes greeting-wave {
+    0%,
+    80%,
+    100% {
+      transform: rotate(0);
+    }
+    85% {
+      transform: rotate(-14deg) scale(1.15);
+    }
+    90% {
+      transform: rotate(12deg) scale(1.15);
+    }
+    95% {
+      transform: rotate(-6deg);
     }
   }
 }

@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { signIn } from "./helpers";
+import { SEASONS } from "../src/lib/seasons";
 
 /**
  * Automated accessibility checks on the pages people actually use.
@@ -83,3 +84,23 @@ test("team play is usable without sight, from setup to lobby", async ({ page }) 
   await page.waitForURL(/\/team\/[0-9a-f-]{36}$/);
   expect(await violations(page), "a team's setup screen").toEqual([]);
 });
+
+/**
+ * The seasonal boards repaint the chrome, the felt and — for the night-only
+ * ones — the surfaces too. Each one the calendar can put on the office's
+ * phones gets the same floor as the default board — all nineteen of them.
+ */
+for (const theme of SEASONS) {
+  test(`the ${theme} board has no serious accessibility violations`, async ({ page, context, baseURL }) => {
+    await signIn(page);
+    await context.addCookies([{ name: "stb_theme", value: theme, url: baseURL! }]);
+    for (const path of ["/", "/more"]) {
+      await page.goto(path);
+      expect(await violations(page), `${theme} ${path}`).toEqual([]);
+    }
+    // And lamp-lit, which has its own felt, wood and brass-ink.
+    await context.addCookies([{ name: "stb_mode", value: "dark", url: baseURL! }]);
+    await page.goto("/");
+    expect(await violations(page), `${theme} / at night`).toEqual([]);
+  });
+}

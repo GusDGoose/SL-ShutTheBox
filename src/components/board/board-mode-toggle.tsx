@@ -29,7 +29,7 @@ export function BoardModeToggle({
           onClick={() => onChange(option)}
           className={`min-h-9 rounded-[calc(var(--radius-control)-0.25rem)] px-3 font-semibold transition-colors ${
             mode === option
-              ? "bg-brass text-ink"
+              ? "bg-brass text-on-brass"
               : "text-ink-muted hover:text-ink"
           }`}
         >

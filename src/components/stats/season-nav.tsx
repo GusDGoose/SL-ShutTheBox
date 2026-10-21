@@ -25,7 +25,7 @@ export function SeasonNav({
       "inline-flex min-h-9 items-center rounded-full px-3.5 text-sm font-semibold",
       "transition-colors duration-[var(--duration-fast)]",
       on
-        ? "bg-brass text-ink"
+        ? "bg-brass text-on-brass"
         : "border border-line text-ink-muted hover:bg-surface-2 hover:text-ink",
     ].join(" ");
 

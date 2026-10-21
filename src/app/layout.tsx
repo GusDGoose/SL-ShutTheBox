@@ -4,6 +4,7 @@ import { Fraunces, Geist } from "next/font/google";
 import { Toaster } from "@/components/ui/toast";
 import { AudioProvider } from "@/components/ui/audio-provider";
 import { ThemeSync } from "@/components/shell/theme-sync";
+import { SeasonAmbient } from "@/components/shell/season-ambient";
 import { InlineScript } from "@/components/shell/inline-script";
 import {
   MODE_COOKIE,
@@ -12,6 +13,7 @@ import {
   THEME_META,
   parseMode,
   parseTheme,
+  resolveTheme,
   themeColorFor,
 } from "@/lib/theme";
 import "./globals.css";
@@ -38,7 +40,7 @@ export const metadata: Metadata = {
 
 export async function generateViewport(): Promise<Viewport> {
   const jar = await cookies();
-  const theme = parseTheme(jar.get(THEME_COOKIE)?.value);
+  const theme = resolveTheme(parseTheme(jar.get(THEME_COOKIE)?.value));
   const mode = parseMode(jar.get(MODE_COOKIE)?.value);
 
   // Browser chrome matches the board's darkest wood. On "system" we hand the
@@ -67,7 +69,7 @@ export async function generateViewport(): Promise<Viewport> {
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const jar = await cookies();
-  const theme = parseTheme(jar.get(THEME_COOKIE)?.value);
+  const pick = parseTheme(jar.get(THEME_COOKIE)?.value);
   const mode = parseMode(jar.get(MODE_COOKIE)?.value);
 
   return (
@@ -75,17 +77,23 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       // The inline script below rewrites data-mode before React hydrates.
       suppressHydrationWarning
-      data-theme={theme}
+      // The board actually painted (today's season when the pick is
+      // "seasonal"), and the pick itself, which ThemeSync re-resolves if the
+      // tab is still open when the season turns.
+      data-theme={resolveTheme(pick)}
+      data-theme-pick={pick}
       data-mode={mode}
+      data-mode-pick={mode}
       className={`${geistSans.variable} ${fraunces.variable} h-full antialiased`}
     >
       <head>
-        {/* Resolves "system" (and pins neon to night) before the first paint,
+        {/* Resolves "system" (and pins the night-only boards) before the first paint,
             so a dark-mode phone never flashes the daylight palette. */}
         <InlineScript html={THEME_INIT_SCRIPT} />
       </head>
       <body className="flex min-h-full flex-col bg-canvas text-ink">
-        <ThemeSync theme={theme} mode={mode} />
+        <ThemeSync theme={pick} mode={mode} />
+        <SeasonAmbient />
         <AudioProvider>
           <Toaster>{children}</Toaster>
         </AudioProvider>
