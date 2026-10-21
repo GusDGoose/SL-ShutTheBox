@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
-import { Fraunces, Geist } from "next/font/google";
+import { Fraunces, Fredoka, Geist, Lilita_One, Silkscreen, VT323 } from "next/font/google";
 import { Toaster } from "@/components/ui/toast";
 import { AudioProvider } from "@/components/ui/audio-provider";
 import { ThemeSync } from "@/components/shell/theme-sync";
@@ -16,6 +16,7 @@ import {
   resolveTheme,
   themeColorFor,
 } from "@/lib/theme";
+import { SKIN_COOKIE, parseSkin, resolveSkin } from "@/lib/skins";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -29,6 +30,33 @@ const geistSans = Geist({
 // numbers feel like an object rather than a table.
 const fraunces = Fraunces({
   variable: "--font-fraunces",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+// The two skins' type (src/lib/skins.ts). Cartoon: a fat poster face over a
+// round, friendly body. 90s: pixel capitals for headings and a terminal face
+// for the numbers, over the Tahoma/Verdana of every 1998 homepage.
+const lilita = Lilita_One({
+  variable: "--font-lilita",
+  weight: "400",
+  subsets: ["latin"],
+  display: "swap",
+});
+const fredoka = Fredoka({
+  variable: "--font-fredoka",
+  subsets: ["latin"],
+  display: "swap",
+});
+const silkscreen = Silkscreen({
+  variable: "--font-silkscreen",
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  display: "swap",
+});
+const vt323 = VT323({
+  variable: "--font-vt323",
+  weight: "400",
   subsets: ["latin"],
   display: "swap",
 });
@@ -71,6 +99,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   const jar = await cookies();
   const pick = parseTheme(jar.get(THEME_COOKIE)?.value);
   const mode = parseMode(jar.get(MODE_COOKIE)?.value);
+  const skinPick = parseSkin(jar.get(SKIN_COOKIE)?.value);
 
   return (
     <html
@@ -84,7 +113,10 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       data-theme-pick={pick}
       data-mode={mode}
       data-mode-pick={mode}
-      className={`${geistSans.variable} ${fraunces.variable} h-full antialiased`}
+      // This week's style, and the pick, re-resolved by ThemeSync on Monday.
+      data-skin={resolveSkin(skinPick)}
+      data-skin-pick={skinPick}
+      className={`${geistSans.variable} ${fraunces.variable} ${lilita.variable} ${fredoka.variable} ${silkscreen.variable} ${vt323.variable} h-full antialiased`}
     >
       <head>
         {/* Resolves "system" (and pins the night-only boards) before the first paint,

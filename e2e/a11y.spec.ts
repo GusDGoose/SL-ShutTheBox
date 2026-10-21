@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { signIn } from "./helpers";
 import { SEASONS } from "../src/lib/seasons";
+import { SKINS } from "../src/lib/skins";
 
 /**
  * Automated accessibility checks on the pages people actually use.
@@ -93,14 +94,21 @@ test("team play is usable without sight, from setup to lobby", async ({ page }) 
 for (const theme of SEASONS) {
   test(`the ${theme} board has no serious accessibility violations`, async ({ page, context, baseURL }) => {
     await signIn(page);
-    await context.addCookies([{ name: "stb_theme", value: theme, url: baseURL! }]);
-    for (const path of ["/", "/more"]) {
-      await page.goto(path);
-      expect(await violations(page), `${theme} ${path}`).toEqual([]);
+    // Both weekly styles wear every season.
+    for (const skin of SKINS) {
+      await context.addCookies([
+        { name: "stb_theme", value: theme, url: baseURL! },
+        { name: "stb_skin", value: skin, url: baseURL! },
+        { name: "stb_mode", value: "light", url: baseURL! },
+      ]);
+      for (const path of ["/", "/more"]) {
+        await page.goto(path);
+        expect(await violations(page), `${skin} ${theme} ${path}`).toEqual([]);
+      }
+      // And lamp-lit, which has its own felt, wood and brass-ink.
+      await context.addCookies([{ name: "stb_mode", value: "dark", url: baseURL! }]);
+      await page.goto("/");
+      expect(await violations(page), `${skin} ${theme} / at night`).toEqual([]);
     }
-    // And lamp-lit, which has its own felt, wood and brass-ink.
-    await context.addCookies([{ name: "stb_mode", value: "dark", url: baseURL! }]);
-    await page.goto("/");
-    expect(await violations(page), `${theme} / at night`).toEqual([]);
   });
 }

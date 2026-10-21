@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { createSfxPlayer, type SfxName, type SfxPlayer } from "@/lib/audio/sfx";
-import { SFX_PACKS } from "@/lib/audio/sfx-packs";
+import { ALL_PACKS } from "@/lib/audio/sfx-packs";
 
 const SOUND_KEY = "stb.sound";
 
@@ -118,7 +118,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         if (!Ctor) return;
         allowPlaybackInSilentMode();
         const ctx = new Ctor();
-        player = createSfxPlayer(ctx, SFX_PACKS);
+        player = createSfxPlayer(ctx, ALL_PACKS);
         playerRef.current = player;
       }
       const ctx = player.ctx;
@@ -159,10 +159,11 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const play = useCallback(
     (name: SfxName) => {
       if (muted) return;
-      // In the voice of whichever board is on: sleigh bells at Christmas, the
-      // ferry's horn in July. Read at play time, so a theme change applies to
-      // the very next clack.
-      playerRef.current?.play(name, document.documentElement.dataset.theme);
+      // In the voice of whichever board is on — sleigh bells at Christmas, the
+      // ferry's horn in July — then of the week's skin (8-bit on a 90s week).
+      // Read at play time, so a change applies to the very next clack.
+      const { theme, skin } = document.documentElement.dataset;
+      playerRef.current?.play(name, theme, `skin:${skin}`);
     },
     [muted],
   );

@@ -5,7 +5,7 @@ import {
   SFX_NAMES,
   type SfxName,
 } from "@/lib/audio/sfx";
-import { SFX_PACKS } from "@/lib/audio/sfx-packs";
+import { ALL_PACKS, CHIPTUNE, SFX_PACKS } from "@/lib/audio/sfx-packs";
 import { SEASONS } from "@/lib/seasons";
 
 /**
@@ -191,5 +191,30 @@ describe("seasonal sound packs", () => {
       const pack = SFX_PACKS[season];
       expect(Object.keys(pack).length, season).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("voice order", () => {
+  it("prefers the season, then the skin, then the classic sound", () => {
+    const calls: string[] = [];
+    const packs = {
+      christmas: { fanfare: () => calls.push("christmas") },
+      "skin:retro": { fanfare: () => calls.push("retro"), tileUp: () => calls.push("retro-up") },
+    };
+    const { ctx } = mockContext("running");
+    const player = createSfxPlayer(ctx, packs);
+    player.play("fanfare", "christmas", "skin:retro");
+    player.play("tileUp", "christmas", "skin:retro");
+    player.play("fanfare", "oak", "skin:cartoon");
+    expect(calls).toEqual(["christmas", "retro-up"]);
+  });
+
+  it("builds every chiptune sound", () => {
+    for (const name of SFX_NAMES) {
+      const { ctx, started } = mockContext("running");
+      createSfxPlayer(ctx, ALL_PACKS).play(name, "oak", "skin:retro");
+      expect(started.length, name).toBeGreaterThan(0);
+    }
+    expect(Object.keys(CHIPTUNE).sort()).toEqual([...SFX_NAMES].sort());
   });
 });

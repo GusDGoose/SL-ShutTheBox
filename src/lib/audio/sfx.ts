@@ -326,8 +326,11 @@ const BUILDERS: Record<SfxName, SfxBuilder> =
   };
 
 export type SfxPlayer = {
-  /** Plays a sound, in the given board's voice when it has one. */
-  play: (name: SfxName, theme?: string) => void;
+  /**
+   * Plays a sound in the voice of the first pack that has one — the board's
+   * season first, then the week's skin — and the classic sound otherwise.
+   */
+  play: (name: SfxName, ...voices: (string | undefined)[]) => void;
   /** Resume after the tab was backgrounded, or after the first user gesture. */
   resume: () => Promise<void>;
   close: () => void;
@@ -353,8 +356,15 @@ export function createSfxPlayer(
   master.connect(ctx.destination);
 
   return {
-    play(name, theme) {
-      const build = (theme ? packs[theme]?.[name] : undefined) ?? BUILDERS[name];
+    play(name, ...voices) {
+      let build: SfxBuilder = BUILDERS[name];
+      for (const voice of voices) {
+        const own = voice ? packs[voice]?.[name] : undefined;
+        if (own) {
+          build = own;
+          break;
+        }
+      }
       if (ctx.state === "running") {
         build(ctx, master, ctx.currentTime);
         return;
